@@ -3,7 +3,7 @@
 #include <bl_common.h>
 #include <console.h>
 #include <debug.h>
-#include <interrupt_mgmt.h>
+#include <bl31/interrupt_mgmt.h>
 #include <mmio.h>
 #include <sip_error.h>
 #include <plat_private.h>
@@ -11,7 +11,7 @@
 #include <platform.h>
 #include <stdint.h>
 #include <string.h>
-#include <xlat_tables.h>
+#include <lib/xlat_tables/xlat_tables.h>
 #include <rng.h>
 
 uint32_t plat_get_true_rnd(uint32_t *val)

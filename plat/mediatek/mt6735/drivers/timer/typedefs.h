@@ -97,7 +97,7 @@ typedef unsigned int U32;
 typedef signed int S32;
 typedef unsigned long long U64;
 typedef signed long long S64;
-typedef unsigned char bool;
+//typedef unsigned char bool;
 
 //------------------------------------------------------------------
 
@@ -172,9 +172,9 @@ typedef u32 dma_addr_t;
 #ifndef NULL
 #define NULL    0
 #endif
-
+/*
 enum boolean
-{ false, true };
+{ false, true };*/
 enum
 { RX, TX, NONE };
 

@@ -33,7 +33,11 @@
 
 #include <platform_def.h> /* for TZROM_SIZE */
 
-
+#define PAGE_SIZE_2MB_SHIFT		TWO_MB_SHIFT
+#define PAGE_SIZE_2MB		(1 << PAGE_SIZE_2MB_SHIFT)
+#define PAGE_SIZE_2MB_MASK		(PAGE_SIZE_2MB - 1)
+#define IS_PAGE_2MB_ALIGNED(addr)	(((addr) & PAGE_SIZE_2MB_MASK) == 0)
+#define ACTLR_CPUECTLR_BIT           (1 << 1)
 /* Firmware Image Package */
 #define FIP_IMAGE_NAME			"fip.bin"
 #define FVP_PRIMARY_CPU			0x0
@@ -81,7 +85,7 @@
 #define MTK_DEVICE_BASE		0x11000000 //[FIXME]
 #define MTK_DEVICE_SIZE		0x1000000
 
-#define MT_DEV_BASE 0x10000000 
+#define MT_DEV_BASE 0x10000000
 #define MT_DEV_SIZE   0x400000
 
 #define MT_GIC_BASE 0x10220000
@@ -133,7 +137,9 @@
 #define SYS_CNTREAD_BASE	0x2a800000
 #define SYS_TIMCTL_BASE		0x2a810000
 
+
 /* V2M motherboard system registers & offsets */
+/*
 #define VE_SYSREGS_BASE		0x1c010000
 #define V2M_SYS_ID		0x0
 #define V2M_SYS_SWITCH		0x4
@@ -141,7 +147,7 @@
 #define V2M_SYS_CFGDATA		0xa0
 #define V2M_SYS_CFGCTRL		0xa4
 #define V2M_SYS_CFGSTATUS	0xa8
-
+*/
 #define CFGCTRL_START		(1 << 31)
 #define CFGCTRL_RW		(1 << 30)
 #define CFGCTRL_FUNC_SHIFT	20
@@ -309,12 +315,12 @@
  ******************************************************************************/
 
 /* Entrypoint mailboxes */
-// #define MBOX_BASE		FVP_SHARED_RAM_BASE
+ #define MBOX_BASE		FVP_SHARED_RAM_BASE
 
 #ifndef __ASSEMBLY__
-extern unsigned long mt_mbox[];
+//extern unsigned long mt_mbox[];
 #endif
-#define MBOX_BASE			mt_mbox//FVP_SHARED_RAM_BASE
+//#define MBOX_BASE			mt_mbox//FVP_SHARED_RAM_BASE
 
 #define MBOX_SIZE		0x200
 
@@ -370,4 +376,19 @@ extern unsigned long mt_mbox[];
 #define MTK_WDT_STATUS_THERMAL_DIRECT_RST   (1<<18)
 #define MTK_WDT_STATUS_SECURITY_RST         (1<<28)
 
+#define PLAT_MT_CCI_CLUSTER0_SL_IFACE_IX 1
+#define PLAT_MT_CCI_CLUSTER1_SL_IFACE_IX 0
+/*******************************************************************************
+ * PWRC Function & variable prototypes
+ ******************************************************************************//*
+int plat_pwrc_setup(void);
+void plat_pwrc_write_pcoffr(unsigned long);
+void plat_pwrc_write_ppoffr(unsigned long);
+void plat_pwrc_write_pponr(unsigned long);
+void plat_pwrc_set_wen(unsigned long);
+void plat_pwrc_clr_wen(unsigned long);
+unsigned int plat_pwrc_read_psysr(u_register_t mpidr);
+unsigned int plat_pwrc_get_cpu_wkr(unsigned long);
+
+*/
 #endif /* __PLAT_DEF_H__ */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2014, ARM Limited and Contributors. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -28,38 +28,24 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __FVP_PWRC_H__
-#define __FVP_PWRC_H__
+#ifndef __STD_SVC_H__
+#define __STD_SVC_H__
 
-/* FVP Power controller register offset etc */
-#define PPOFFR_OFF		0x0
-#define PPONR_OFF		0x4
-#define PCOFFR_OFF		0x8
-#define PWKUPR_OFF		0xc
-#define PSYSR_OFF		0x10
+/* SMC function IDs for Standard Service queries */
 
-#define PWKUPR_WEN		(1ull << 31)
+#define ARM_STD_SVC_CALL_COUNT		0x8400ff00
+#define ARM_STD_SVC_UID			0x8400ff01
+/*					0x8400ff02 is reserved */
+#define ARM_STD_SVC_VERSION		0x8400ff03
 
-#define PSYSR_AFF_L2		(1 << 31)
-#define PSYSR_AFF_L1		(1 << 30)
-#define PSYSR_AFF_L0		(1 << 29)
-#define PSYSR_WEN		(1 << 28)
-#define PSYSR_PC		(1 << 27)
-#define PSYSR_PP		(1 << 26)
+/* ARM Standard Service Calls version numbers */
+#define STD_SVC_VERSION_MAJOR		0x0
+#define STD_SVC_VERSION_MINOR		0x1
 
-#define PSYSR_WK_SHIFT		24
-#define PSYSR_WK_MASK		0x3
-#define PSYSR_WK(x)		(x >> PSYSR_WK_SHIFT) & PSYSR_WK_MASK
+/* The macros below are used to identify PSCI calls from the SMC function ID */
+#define PSCI_FID_MASK			0xffe0u
+#define PSCI_FID_VALUE			0u
+#define is_psci_fid(_fid) \
+	(((_fid) & PSCI_FID_MASK) == PSCI_FID_VALUE)
 
-#define WKUP_COLD		0x0
-#define WKUP_RESET		0x1
-#define WKUP_PPONR		0x2
-#define WKUP_GICREQ		0x3
-
-#define PSYSR_INVALID		0xffffffff
-
-#ifndef __ASSEMBLY__
-
-#endif /*__ASSEMBLY__*/
-
-#endif /* __FVP_PWRC_H__ */
+#endif /* __STD_SVC_H__ */

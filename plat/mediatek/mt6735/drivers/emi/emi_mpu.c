@@ -2,21 +2,19 @@
 #include <assert.h>
 #include <bl_common.h>
 #include <debug.h>
-#include <interrupt_mgmt.h>
+#include <bl31/interrupt_mgmt.h>
 #include <platform.h>
-#include <plat_config.h>
+#include <plat/arm/common/arm_config.h>
 #include <stdint.h>
 #include "plat_def.h"
 #include "plat_private.h"
 #include <platform_def.h>
 #include <stdio.h>  //for printf
 #include <emi_drv.h>
-#include <sip_error.h>
+#include <bl31/services/sip_error.h>
 #include <mmio.h>
 
-#if 0
-#define readl(addr) (__raw_readl(addr))
-#define writel(b,addr) __raw_writel(b,addr)
+
 #define IOMEM(reg) (reg)
 /*
  * emi_mpu_set_region_protection: protect a region.
@@ -51,166 +49,165 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 
 	switch (region) {
 	case 0:
-		tmp = readl(IOMEM(EMI_MPUI)) & 0xFFFF0000;
-		tmp2 = readl(IOMEM(EMI_MPUI_2ND)) & 0xFFFF0000;
-		writel(0, EMI_MPUI);
-		writel(0, EMI_MPUI_2ND);
-		writel((start << 16) | end, EMI_MPUA);
-		writel(tmp2 | ax_pm2, EMI_MPUI_2ND);
-		writel(tmp | ax_pm, EMI_MPUI);
+		tmp = mmio_read_32(IOMEM(EMI_MPUI)) & 0xFFFF0000;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUI_2ND)) & 0xFFFF0000;
+		mmio_write_32(0, EMI_MPUI);
+		mmio_write_32(0, EMI_MPUI_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUA);
+		mmio_write_32(tmp2 | ax_pm2, EMI_MPUI_2ND);
+		mmio_write_32(tmp | ax_pm, EMI_MPUI);
 		break;
 
 	case 1:
-		tmp = readl(IOMEM(EMI_MPUI)) & 0x0000FFFF;
-		tmp2 = readl(IOMEM(EMI_MPUI_2ND)) & 0x0000FFFF;
-		writel(0, EMI_MPUI);
-		writel(0, EMI_MPUI_2ND);
-		writel((start << 16) | end, EMI_MPUB);
-		writel(tmp2 | (ax_pm2 << 16), EMI_MPUI_2ND);
-		writel(tmp | (ax_pm << 16), EMI_MPUI);
+		tmp = mmio_read_32(IOMEM(EMI_MPUI)) & 0x0000FFFF;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUI_2ND)) & 0x0000FFFF;
+		mmio_write_32(0, EMI_MPUI);
+		mmio_write_32(0, EMI_MPUI_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUB);
+		mmio_write_32(tmp2 | (ax_pm2 << 16), EMI_MPUI_2ND);
+		mmio_write_32(tmp | (ax_pm << 16), EMI_MPUI);
 		break;
 
 	case 2:
-		tmp = readl(IOMEM(EMI_MPUJ)) & 0xFFFF0000;
-		tmp2 = readl(IOMEM(EMI_MPUJ_2ND)) & 0xFFFF0000;
-		writel(0, EMI_MPUJ);
-		writel(0, EMI_MPUJ_2ND);
-		writel((start << 16) | end, EMI_MPUC);
-		writel(tmp2 | ax_pm2, EMI_MPUJ_2ND);
-		writel(tmp | ax_pm, EMI_MPUJ);
+		tmp = mmio_read_32(IOMEM(EMI_MPUJ)) & 0xFFFF0000;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUJ_2ND)) & 0xFFFF0000;
+		mmio_write_32(0, EMI_MPUJ);
+		mmio_write_32(0, EMI_MPUJ_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUC);
+		mmio_write_32(tmp2 | ax_pm2, EMI_MPUJ_2ND);
+		mmio_write_32(tmp | ax_pm, EMI_MPUJ);
 		break;
 
 	case 3:
-		tmp = readl(IOMEM(EMI_MPUJ)) & 0x0000FFFF;
-		tmp2 = readl(IOMEM(EMI_MPUJ_2ND)) & 0x0000FFFF;
-		writel(0, EMI_MPUJ);
-		writel(0, EMI_MPUJ_2ND);
-		writel((start << 16) | end, EMI_MPUD);
-		writel(tmp2 | (ax_pm2 << 16), EMI_MPUJ_2ND);
-		writel(tmp | (ax_pm << 16), EMI_MPUJ);
+		tmp = mmio_read_32(IOMEM(EMI_MPUJ)) & 0x0000FFFF;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUJ_2ND)) & 0x0000FFFF;
+		mmio_write_32(0, EMI_MPUJ);
+		mmio_write_32(0, EMI_MPUJ_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUD);
+		mmio_write_32(tmp2 | (ax_pm2 << 16), EMI_MPUJ_2ND);
+		mmio_write_32(tmp | (ax_pm << 16), EMI_MPUJ);
 		break;
 
 	case 4:
-		tmp = readl(IOMEM(EMI_MPUK)) & 0xFFFF0000;
-		tmp2 = readl(IOMEM(EMI_MPUK_2ND)) & 0xFFFF0000;
-		writel(0, EMI_MPUK);
-		writel(0, EMI_MPUK_2ND);
-		writel((start << 16) | end, EMI_MPUE);
-		writel(tmp2 | ax_pm2, EMI_MPUK_2ND);
-		writel(tmp | ax_pm, EMI_MPUK);
+		tmp = mmio_read_32(IOMEM(EMI_MPUK)) & 0xFFFF0000;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUK_2ND)) & 0xFFFF0000;
+		mmio_write_32(0, EMI_MPUK);
+		mmio_write_32(0, EMI_MPUK_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUE);
+		mmio_write_32(tmp2 | ax_pm2, EMI_MPUK_2ND);
+		mmio_write_32(tmp | ax_pm, EMI_MPUK);
 		break;
 
 	case 5:
-		tmp = readl(IOMEM(EMI_MPUK)) & 0x0000FFFF;
-		tmp2 = readl(IOMEM(EMI_MPUK_2ND)) & 0x0000FFFF;
-		writel(0, EMI_MPUK);
-		writel(0, EMI_MPUK_2ND);
-		writel((start << 16) | end, EMI_MPUF);
-		writel(tmp2 | (ax_pm2 << 16), EMI_MPUK_2ND);
-		writel(tmp | (ax_pm << 16), EMI_MPUK);
+		tmp = mmio_read_32(IOMEM(EMI_MPUK)) & 0x0000FFFF;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUK_2ND)) & 0x0000FFFF;
+		mmio_write_32(0, EMI_MPUK);
+		mmio_write_32(0, EMI_MPUK_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUF);
+		mmio_write_32(tmp2 | (ax_pm2 << 16), EMI_MPUK_2ND);
+		mmio_write_32(tmp | (ax_pm << 16), EMI_MPUK);
 		break;
 
 	case 6:
-		tmp = readl(IOMEM(EMI_MPUL)) & 0xFFFF0000;
-		tmp2 = readl(IOMEM(EMI_MPUL_2ND)) & 0xFFFF0000;
-		writel(0, EMI_MPUL);
-		writel(0, EMI_MPUL_2ND);
-		writel((start << 16) | end, EMI_MPUG);
-		writel(tmp2 | ax_pm2, EMI_MPUL_2ND);
-		writel(tmp | ax_pm, EMI_MPUL);
+		tmp = mmio_read_32(IOMEM(EMI_MPUL)) & 0xFFFF0000;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUL_2ND)) & 0xFFFF0000;
+		mmio_write_32(0, EMI_MPUL);
+		mmio_write_32(0, EMI_MPUL_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUG);
+		mmio_write_32(tmp2 | ax_pm2, EMI_MPUL_2ND);
+		mmio_write_32(tmp | ax_pm, EMI_MPUL);
 		break;
 
 	case 7:
-		tmp = readl(IOMEM(EMI_MPUL)) & 0x0000FFFF;
-		tmp2 = readl(IOMEM(EMI_MPUL_2ND)) & 0x0000FFFF;
-		writel(0, EMI_MPUL);
-		writel(0, EMI_MPUL_2ND);
-		writel((start << 16) | end, EMI_MPUH);
-		writel(tmp2 | (ax_pm2 << 16), EMI_MPUL_2ND);
-		writel(tmp | (ax_pm << 16), EMI_MPUL);
+		tmp = mmio_read_32(IOMEM(EMI_MPUL)) & 0x0000FFFF;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUL_2ND)) & 0x0000FFFF;
+		mmio_write_32(0, EMI_MPUL);
+		mmio_write_32(0, EMI_MPUL_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUH);
+		mmio_write_32(tmp2 | (ax_pm2 << 16), EMI_MPUL_2ND);
+		mmio_write_32(tmp | (ax_pm << 16), EMI_MPUL);
 		break;
 
-#if defined(MACH_TYPE_MT6735) || defined(MACH_TYPE_MT6753)
 	case 8:
-		tmp = readl(IOMEM(EMI_MPUI2)) & 0xFFFF0000;
-		tmp2 = readl(IOMEM(EMI_MPUI2_2ND)) & 0xFFFF0000;
-		writel(0, EMI_MPUI2);
-		writel(0, EMI_MPUI2_2ND);
-		writel((start << 16) | end, EMI_MPUA2);
-		writel(tmp2 | ax_pm2, EMI_MPUI2_2ND);
-		writel(tmp | ax_pm, EMI_MPUI2);
+		tmp = mmio_read_32(IOMEM(EMI_MPUI2)) & 0xFFFF0000;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUI2_2ND)) & 0xFFFF0000;
+		mmio_write_32(0, EMI_MPUI2);
+		mmio_write_32(0, EMI_MPUI2_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUA2);
+		mmio_write_32(tmp2 | ax_pm2, EMI_MPUI2_2ND);
+		mmio_write_32(tmp | ax_pm, EMI_MPUI2);
 		break;
 
 	case 9:
-		tmp = readl(IOMEM(EMI_MPUI2)) & 0x0000FFFF;
-		tmp2 = readl(IOMEM(EMI_MPUI2_2ND)) & 0x0000FFFF;
-		writel(0, EMI_MPUI2);
-		writel(0, EMI_MPUI2_2ND);
-		writel((start << 16) | end, EMI_MPUB2);
-		writel(tmp2 | (ax_pm2 << 16), EMI_MPUI2_2ND);
-		writel(tmp | (ax_pm << 16), EMI_MPUI2);
+		tmp = mmio_read_32(IOMEM(EMI_MPUI2)) & 0x0000FFFF;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUI2_2ND)) & 0x0000FFFF;
+		mmio_write_32(0, EMI_MPUI2);
+		mmio_write_32(0, EMI_MPUI2_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUB2);
+		mmio_write_32(tmp2 | (ax_pm2 << 16), EMI_MPUI2_2ND);
+		mmio_write_32(tmp | (ax_pm << 16), EMI_MPUI2);
 		break;
 
 	case 10:
-		tmp = readl(IOMEM(EMI_MPUJ2)) & 0xFFFF0000;
-		tmp2 = readl(IOMEM(EMI_MPUJ2_2ND)) & 0xFFFF0000;
-		writel(0, EMI_MPUJ2);
-		writel(0, EMI_MPUJ2_2ND);
-		writel((start << 16) | end, EMI_MPUC2);
-		writel(tmp2 | ax_pm2, EMI_MPUJ2_2ND);
-		writel(tmp | ax_pm, EMI_MPUJ2);
+		tmp = mmio_read_32(IOMEM(EMI_MPUJ2)) & 0xFFFF0000;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUJ2_2ND)) & 0xFFFF0000;
+		mmio_write_32(0, EMI_MPUJ2);
+		mmio_write_32(0, EMI_MPUJ2_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUC2);
+		mmio_write_32(tmp2 | ax_pm2, EMI_MPUJ2_2ND);
+		mmio_write_32(tmp | ax_pm, EMI_MPUJ2);
 		break;
 
 	case 11:
-		tmp = readl(IOMEM(EMI_MPUJ2)) & 0x0000FFFF;
-		tmp2 = readl(IOMEM(EMI_MPUJ2_2ND)) & 0x0000FFFF;
-		writel(0, EMI_MPUJ2);
-		writel(0, EMI_MPUJ2_2ND);
-		writel((start << 16) | end, EMI_MPUD2);
-		writel(tmp2 | (ax_pm2 << 16), EMI_MPUJ2_2ND);
-		writel(tmp | (ax_pm << 16), EMI_MPUJ2);
+		tmp = mmio_read_32(IOMEM(EMI_MPUJ2)) & 0x0000FFFF;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUJ2_2ND)) & 0x0000FFFF;
+		mmio_write_32(0, EMI_MPUJ2);
+		mmio_write_32(0, EMI_MPUJ2_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUD2);
+		mmio_write_32(tmp2 | (ax_pm2 << 16), EMI_MPUJ2_2ND);
+		mmio_write_32(tmp | (ax_pm << 16), EMI_MPUJ2);
 		break;
 
 	case 12:
-		tmp = readl(IOMEM(EMI_MPUK2)) & 0xFFFF0000;
-		tmp2 = readl(IOMEM(EMI_MPUK2_2ND)) & 0xFFFF0000;
-		writel(0, EMI_MPUK2);
-		writel(0, EMI_MPUK2_2ND);
-		writel((start << 16) | end, EMI_MPUE2);
-		writel(tmp2 | ax_pm2, EMI_MPUK2_2ND);
-		writel(tmp | ax_pm, EMI_MPUK2);
+		tmp = mmio_read_32(IOMEM(EMI_MPUK2)) & 0xFFFF0000;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUK2_2ND)) & 0xFFFF0000;
+		mmio_write_32(0, EMI_MPUK2);
+		mmio_write_32(0, EMI_MPUK2_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUE2);
+		mmio_write_32(tmp2 | ax_pm2, EMI_MPUK2_2ND);
+		mmio_write_32(tmp | ax_pm, EMI_MPUK2);
 		break;
 
 	case 13:
-		tmp = readl(IOMEM(EMI_MPUK2)) & 0x0000FFFF;
-		tmp2 = readl(IOMEM(EMI_MPUK2_2ND)) & 0x0000FFFF;
-		writel(0, EMI_MPUK2);
-		writel(0, EMI_MPUK2_2ND);
-		writel((start << 16) | end, EMI_MPUF2);
-		writel(tmp2 | (ax_pm2 << 16), EMI_MPUK2_2ND);
-		writel(tmp | (ax_pm << 16), EMI_MPUK2);
+		tmp = mmio_read_32(IOMEM(EMI_MPUK2)) & 0x0000FFFF;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUK2_2ND)) & 0x0000FFFF;
+		mmio_write_32(0, EMI_MPUK2);
+		mmio_write_32(0, EMI_MPUK2_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUF2);
+		mmio_write_32(tmp2 | (ax_pm2 << 16), EMI_MPUK2_2ND);
+		mmio_write_32(tmp | (ax_pm << 16), EMI_MPUK2);
 		break;
 
 	case 14:
-		tmp = readl(IOMEM(EMI_MPUL2)) & 0xFFFF0000;
-		tmp2 = readl(IOMEM(EMI_MPUL2_2ND)) & 0xFFFF0000;
-		writel(0, EMI_MPUL2);
-		writel(0, EMI_MPUL2_2ND);
-		writel((start << 16) | end, EMI_MPUG2);
-		writel(tmp2 | ax_pm2, EMI_MPUL2_2ND);
-		writel(tmp | ax_pm, EMI_MPUL2);
+		tmp = mmio_read_32(IOMEM(EMI_MPUL2)) & 0xFFFF0000;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUL2_2ND)) & 0xFFFF0000;
+		mmio_write_32(0, EMI_MPUL2);
+		mmio_write_32(0, EMI_MPUL2_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUG2);
+		mmio_write_32(tmp2 | ax_pm2, EMI_MPUL2_2ND);
+		mmio_write_32(tmp | ax_pm, EMI_MPUL2);
 		break;
 
 	case 15:
-		tmp = readl(IOMEM(EMI_MPUL2)) & 0x0000FFFF;
-		tmp2 = readl(IOMEM(EMI_MPUL2_2ND)) & 0x0000FFFF;
-		writel(0, EMI_MPUL2);
-		writel(0, EMI_MPUL2_2ND);
-		writel((start << 16) | end, EMI_MPUH2);
-		writel(tmp2 | (ax_pm2 << 16), EMI_MPUL2_2ND);
-		writel(tmp | (ax_pm << 16), EMI_MPUL2);
+		tmp = mmio_read_32(IOMEM(EMI_MPUL2)) & 0x0000FFFF;
+		tmp2 = mmio_read_32(IOMEM(EMI_MPUL2_2ND)) & 0x0000FFFF;
+		mmio_write_32(0, EMI_MPUL2);
+		mmio_write_32(0, EMI_MPUL2_2ND);
+		mmio_write_32((start << 16) | end, EMI_MPUH2);
+		mmio_write_32(tmp2 | (ax_pm2 << 16), EMI_MPUL2_2ND);
+		mmio_write_32(tmp | (ax_pm << 16), EMI_MPUL2);
 		break;
-#endif
+
 
 	default:
 		ret = -1;
@@ -219,7 +216,7 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 
 	return ret;
 }
-#endif
+
 
 
 
@@ -230,12 +227,11 @@ void emimpu_set_domain_secure_access(int domain, int sec_access)
 		EMI_MPUN,  /* domain 1 */
 		EMI_MPUO,  /* domain 2 */
 		EMI_MPUU,  /* domain 3 */
-#if defined(MACH_TYPE_MT6735) || defined(MACH_TYPE_MT6753)
 		EMI_MPUM2, /* domain 4 */
 		EMI_MPUN2, /* domain 5 */
 		EMI_MPUO2, /* domain 6 */
 		EMI_MPUU2, /* domain 7 */
-#endif
+
 	};
 	unsigned int addr, value;
 
@@ -299,7 +295,6 @@ static int is_emi_mpu_reg_write_forbidden(unsigned int offset, unsigned int reg_
 		EMI_MPUJ,
 		EMI_MPUJ_2ND,
 
-#if defined(MACH_TYPE_MT6735) || defined(MACH_TYPE_MT6753)
 		/* control region 3 register*/
 		EMI_MPUD,
 
@@ -307,27 +302,17 @@ static int is_emi_mpu_reg_write_forbidden(unsigned int offset, unsigned int reg_
 		EMI_MPUE,
 		EMI_MPUK,
 		EMI_MPUK_2ND,
-#endif
 	};
 
 
 	if(is_emi_mpu_reg(offset))
 	{
 		int check_offset = 0;
-#if defined(MACH_TYPE_MT6735M)
-		/* need to check region 3 setup which is allowed to write */
-		if(offset == EMI_MPUJ)
-		{
-			check_offset = 1;
-		}
-
-#else /* mt6753, 6735 */
 		/* need to check region 5 setup which is allowed to write */
 		if(offset == EMI_MPUK || offset == EMI_MPUK_2ND)
 		{
 			check_offset = 1;
 		}
-#endif
 
 		if(check_offset)
 		{

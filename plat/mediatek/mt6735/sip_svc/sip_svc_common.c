@@ -49,7 +49,7 @@
 #include "sip_private.h"
 #include "mt_cpuxgpt.h"
 
-#include <xlat_tables.h>
+#include <lib/xlat_tables/xlat_tables.h>
 #include <emi_drv.h>
 #include <log.h>
 #include <rng.h>
@@ -275,13 +275,13 @@ uint64_t sip_smc_handler(uint32_t smc_fid,
 		rc = mcusys_write_count;
 		break;
 	case MTK_SIP_KERNEL_BOOT_AARCH32:
-		set_uart_flag();
+		//set_uart_flag();
 		printf("save kernel info\n");
 		save_kernel_info(x1, x2, x3, x4);
 		bl31_prepare_kernel_entry(x4);
 		printf("EMI MPUS=0x%x; MPUT=0x%x\n", mmio_read_32(0x102031F0), mmio_read_32(0x102031F8));
 		printf("el3_exit\n");
-		clear_uart_flag();
+		//clear_uart_flag();
 		SMC_RET0(handle);
 		break;
 	case MTK_SIP_KERNEL_DAPC_INIT_AARCH32:
@@ -326,7 +326,7 @@ uint64_t sip_smc_handler(uint32_t smc_fid,
 		break;
 	case MTK_SIP_KERNEL_TIME_SYNC_AARCH32:
 	case MTK_SIP_KERNEL_TIME_SYNC_AARCH64:
-		printf("kernel time sync 0x%16lx 0x%16lx atf: 0x%16lx\n", x1, x2, atf_sched_clock());
+		printf("kernel time sync 0x%16lx 0x%16lx atf: 0x%16llx\n", x1, x2, atf_sched_clock());
 		/* in arch32, high 32 bits is stored in x2 and this would be 0 in arch64 */
 		atf_sched_clock_init(atf_sched_clock() - (x1 + (x2 << 32)), 0);
 		MT_LOG_KTIME_SET();
@@ -334,7 +334,7 @@ uint64_t sip_smc_handler(uint32_t smc_fid,
 		break;
 	case MTK_SIP_LK_DUMP_ATF_LOG_INFO_AARCH32:
 	case MTK_SIP_LK_DUMP_ATF_LOG_INFO_AARCH64:
-		set_uart_flag();
+		//set_uart_flag();
 		atf_crash_log_addr = mt_log_get_crash_log_addr();
 		atf_crash_log_size = mt_log_get_crash_log_size();
 		atf_crash_flag_addr_ptr = mt_log_get_crash_flag_addr();
@@ -345,7 +345,7 @@ uint64_t sip_smc_handler(uint32_t smc_fid,
 		printf("buf size:%u ,", atf_crash_log_size);
 		printf("flag addr:0x%x ,", atf_crash_flag_addr);
 		printf("flag:0x%x\n", *atf_crash_flag_addr_ptr);
-		clear_uart_flag();
+		//clear_uart_flag();
 		SMC_RET3(handle, atf_crash_log_addr, atf_crash_log_size, atf_crash_flag_addr);
 		break;
 	default:

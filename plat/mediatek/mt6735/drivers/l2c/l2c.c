@@ -2,7 +2,7 @@
 #include <arch.h>
 #include <arch_helpers.h>
 #include <mmio.h>
-#include <sip_error.h>
+#include <bl31/services/sip_error.h>
 #include <spinlock.h>
 #include <debug.h>
 #include "plat_private.h"
@@ -56,7 +56,7 @@ uint64_t switch_L2_size(uint64_t option, uint64_t share_cluster_num, uint64_t cl
 
     switch(option) {
     case BORROW_L2:
-	if(share_info.share_cluster_num == 1)	
+	if(share_info.share_cluster_num == 1)
 	{
 	        cache_cfg0 |= (share_info.cluster_borrow << L2C_SIZE_CFG_OFF);
 	        mmio_write_32(MP0_CA7L_CACHE_CONFIG, cache_cfg0);
@@ -80,7 +80,7 @@ uint64_t switch_L2_size(uint64_t option, uint64_t share_cluster_num, uint64_t cl
         //printf("switch L2$ size 4\n");
         break;
     case RETURN_L2:
-	if(share_info.share_cluster_num == 1)	
+	if(share_info.share_cluster_num == 1)
 	{
 	        cache_cfg0 = mmio_read_32(MP0_CA7L_CACHE_CONFIG) | (share_info.cluster_return << L2C_SIZE_CFG_OFF);
 	        mmio_write_32(MP0_CA7L_CACHE_CONFIG, cache_cfg0);
@@ -114,12 +114,12 @@ uint64_t switch_L2_size(uint64_t option, uint64_t share_cluster_num, uint64_t cl
         }
         else
         {
-#endif          
-            //printf("switch L2$ size 5.2\n");            
+#endif
+            //printf("switch L2$ size 5.2\n");
         //}
         //printf("switch L2$ size 6\n");
-        break;    
-    default:        
+        break;
+    default:
         ret = SIP_SVC_E_NOT_SUPPORTED;
         break;
     }

@@ -70,7 +70,7 @@ void disable_group(unsigned int grp)
 {
 	unsigned int gicc_base, pre;
 
-	gicc_base = BASE_GICC_BASE
+	gicc_base = get_plat_config()->gicc_base;
 
 	pre = gicc_read_ctlr(gicc_base);
 	pre = pre & (~(1 << grp));
@@ -81,7 +81,7 @@ void enable_group(unsigned int grp)
 {
 	unsigned int gicc_base, pre;
 
-	gicc_base = BASE_GICC_BASE
+	gicc_base = get_plat_config()->gicc_base;
 
 	pre = gicc_read_ctlr(gicc_base);
 	pre = pre | (1 << grp);
@@ -127,13 +127,13 @@ void prepare_gic_for_nsec_boot(void)
 {
 	unsigned int gicd_base;
 
-	gicd_base = BASE_GICD_BASE
+	gicd_base = get_plat_config()->gicd_base;
 	disable_s_exc_intr(gicd_base);
 }
 
 unsigned int get_irq_target(unsigned int irq)
 {
-	unsigned int gicd_base = BASE_GICD_BASE
+	unsigned int gicd_base = get_plat_config()->gicd_base;
 
 	return gicd_read_itargetsr(gicd_base, irq);
 }
@@ -142,7 +142,7 @@ void prepare_gic_for_sec_boot(void)
 {
 	unsigned int gicd_base, index;
 
-	gicd_base = BASE_GICD_BASE
+	gicd_base = get_plat_config()->gicd_base;
 	for (index = 0; index < SEC_EXC_CNT; index++)
 		gicd_set_icenabler(gicd_base, sec_exc[index]);
 }
@@ -151,7 +151,7 @@ void migrate_gic_context(uint32_t secure_state)
 {
 	unsigned int gicd_base, index, val;
 
-	gicd_base = BASE_GICD_BASE
+	gicd_base = get_plat_config()->gicd_base;
 
 	if (secure_state == SECURE) {
 		disable_ns_exc_intr(gicd_base);
@@ -255,7 +255,7 @@ void teei_gic_setup(void)
 {
 	unsigned int gicd_base;
 
-	gicd_base = BASE_GICD_BASE
+	gicd_base = get_plat_config()->gicd_base;
 
 	teei_init_interrupt();
 

@@ -33,6 +33,6 @@ BL32_SOURCES		+=	drivers/arm/gic/arm_gic.c			\
 				drivers/arm/gic/gic_v2.c			\
 				plat/common/aarch64/platform_mp_stack.S		\
 				plat/common/plat_gic.c				\
-				plat/plat/aarch64/plat_common.c			\
-				plat/plat/aarch64/plat_helpers.S			\
-				plat/plat/tsp/tsp_plat_setup.c
+				plat/common/aarch64/plat_common.c			\
+				plat/common/aarch64/plat_helpers.S			\
+				plat/mediatek/mt6735/tsp/tsp_plat_setup.c

@@ -38,20 +38,20 @@
  * each platform has its own pwrc so just exporting functions is fine.
  */
 static bakery_lock_t pwrc_lock __attribute__ ((section("tzfw_coherent_mem")));
-
+/*
 unsigned int plat_pwrc_get_cpu_wkr(unsigned long mpidr)
 {
 	return PSYSR_WK(plat_pwrc_read_psysr(mpidr));
 }
-
-unsigned int plat_pwrc_read_psysr(unsigned long mpidr)
+*/
+unsigned int plat_pwrc_read_psysr(u_register_t mpidr)
 {
 	unsigned int rc;
 	bakery_lock_get(&pwrc_lock);
 #if 0
 	mmio_write_32(PWRC_BASE + PSYSR_OFF, (unsigned int) mpidr);
 	rc = mmio_read_32(PWRC_BASE + PSYSR_OFF);
-#endif	
+#endif
     rc = PSYSR_INVALID;
 	bakery_lock_release(&pwrc_lock);
 	return rc;
@@ -62,7 +62,7 @@ void plat_pwrc_write_pponr(unsigned long mpidr)
 	bakery_lock_get(&pwrc_lock);
 #if 0
 	mmio_write_32(PWRC_BASE + PPONR_OFF, (unsigned int) mpidr);
-#endif //#if 0	
+#endif //#if 0
 	bakery_lock_release(&pwrc_lock);
 }
 
@@ -71,7 +71,7 @@ void plat_pwrc_write_ppoffr(unsigned long mpidr)
 	bakery_lock_get(&pwrc_lock);
 #if 0
 	mmio_write_32(PWRC_BASE + PPOFFR_OFF, (unsigned int) mpidr);
-#endif //#if 0	
+#endif //#if 0
 	bakery_lock_release(&pwrc_lock);
 }
 
@@ -88,17 +88,17 @@ void plat_pwrc_set_wen(unsigned long mpidr)
 void plat_pwrc_clr_wen(unsigned long mpidr)
 {
 	bakery_lock_get(&pwrc_lock);
-#if 0	
+#if 0
 	mmio_write_32(PWRC_BASE + PWKUPR_OFF,
 		      (unsigned int) mpidr);
-#endif		      
+#endif
 	bakery_lock_release(&pwrc_lock);
 }
 
 void plat_pwrc_write_pcoffr(unsigned long mpidr)
 {
 	bakery_lock_get(&pwrc_lock);
-#if 0	
+#if 0
 	mmio_write_32(PWRC_BASE + PCOFFR_OFF, (unsigned int) mpidr);
 #endif //#if 0
 	bakery_lock_release(&pwrc_lock);

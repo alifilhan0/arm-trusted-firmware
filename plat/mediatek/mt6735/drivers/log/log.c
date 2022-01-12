@@ -34,7 +34,7 @@
  * Software") have been modified by MediaTek Inc. All revisions are subject to
  * any receiver's applicable license agreements with MediaTek Inc.
  */
-
+#include "../../plat_def.h"
 #include <log.h>
 #include <stdio.h>
 #include <string.h>

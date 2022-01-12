@@ -30,11 +30,10 @@
 
 #include <assert.h>
 #include <debug.h>
-#include <plat_config.h>
+#include <plat/arm/common/arm_config.h>
 #include <tzc400.h>
 #include "plat_def.h"
 #include "plat_private.h"
-
 /* Used to improve readability for configuring regions. */
 #define FILTER_SHIFT(filter)	(1 << filter)
 
@@ -55,7 +54,7 @@ void plat_security_setup(void)
 	 * configurations, those would be configured here.
 	 */
 
-	if (!(get_plat_config()->flags & CONFIG_HAS_TZC))
+	if (!(get_arm_config()->flags & ARM_CONFIG_HAS_TZC))
 		return;
 
 	/*

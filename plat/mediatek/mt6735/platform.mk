@@ -30,6 +30,10 @@
 
 # Shared memory may be allocated at the top of Trusted SRAM (tsram) or at the
 # base of Trusted SRAM (tdram)
+
+MTK_PLAT		:=	plat/mediatek
+MTK_PLAT_SOC		:=	${MTK_PLAT}/${PLAT}
+
 FVP_SHARED_DATA_LOCATION := tsram
 ifeq (${FVP_SHARED_DATA_LOCATION}, tsram)
   FVP_SHARED_DATA_LOCATION_ID := FVP_IN_TRUSTED_SRAM
@@ -60,76 +64,95 @@ endif
 $(eval $(call add_define,FVP_SHARED_DATA_LOCATION_ID))
 $(eval $(call add_define,FVP_TSP_RAM_LOCATION_ID))
 
-PLAT_INCLUDES := -Iplat/${PLAT}/include/ \
-				-Iplat/${PLAT}/ \
-				-Iplat/${PLAT}/drivers/log \
-				-Iplat/${PLAT}/drivers/timer/ \
-				-Iplat/${PLAT}/drivers/devapc/ \
-				-Iplat/${PLAT}/drivers/l2c/ \
-				-Iplat/${PLAT}/drivers/emi \
-				-Iplat/${PLAT}/drivers/sec
+PLAT_INCLUDES := -I${MTK_PLAT_SOC}/include \
+				-I${MTK_PLAT_SOC}/ \
+				-I${MTK_PLAT_SOC}/drivers/log \
+				-I${MTK_PLAT_SOC}/drivers/timer \
+				-I${MTK_PLAT_SOC}/drivers/devapc \
+				-I${MTK_PLAT_SOC}/drivers/l2c \
+				-I${MTK_PLAT_SOC}/drivers/emi \
+				-I${MTK_PLAT_SOC}/drivers/pmic \
+				-I${MTK_PLAT_SOC}/drivers/rtc \
+				-Iinclude/common \
+				-Iinclude/drivers/io \
+				-Iinclude/plat/common \
+				-Iinclude/bl31/services \
+				-Iinclude/bl31 \
+				-Iinclude/drivers/arm \
+				-Iinclude/drivers \
+				-Iinclude/lib \
+				-I${MTK_PLAT_SOC}/drivers/sec \
+				-Idrivers/arm/gic/v2 \
+				-Idrivers/arm/gic/common \
+				-I${MTK_PLAT}/common
 
 PLAT_BL_COMMON_SOURCES := drivers/io/io_fip.c \
 				drivers/io/io_memmap.c \
 				drivers/io/io_semihosting.c \
 				drivers/io/io_storage.c \
-				lib/aarch64/xlat_tables.c \
+				lib/xlat_tables/aarch64/xlat_tables.c \
 				lib/semihosting/semihosting.c \
 				lib/semihosting/aarch64/semihosting_call.S \
+				drivers/arm/pl011/aarch64/pl011_console.S \
 				plat/common/aarch64/plat_common.c \
-				plat/${PLAT}/plat_io_storage.c \
-				plat/common/fiq_smp_call.c
+				${MTK_PLAT_SOC}/plat_io_storage.c
 
-BL1_SOURCES += drivers/arm/cci400/cci400.c \
+BL1_SOURCES += drivers/arm/cci/cci.c \
 				lib/cpus/aarch64/aem_generic.S \
 				lib/cpus/aarch64/cortex_a53.S \
 				lib/cpus/aarch64/cortex_a57.S \
 				plat/common/aarch64/platform_up_stack.S \
-				plat/${PLAT}/bl1_plat_setup.c \
-				plat/${PLAT}/aarch64/plat_common.c \
-				plat/${PLAT}/aarch64/plat_helpers.S
+				${MTK_PLAT_SOC}/bl1_plat_setup.c \
+				plat/common/aarch64/plat_common.c \
+				${MTK_PLAT_SOC}/aarch64/plat_helpers.S
 
-BL2_SOURCES += drivers/arm/tzc400/tzc400.c \
+BL2_SOURCES += drivers/arm/tzc/tzc400.c \
 				plat/common/aarch64/platform_up_stack.S \
-				plat/${PLAT}/bl2_plat_setup.c \
-				plat/${PLAT}/plat_security.c \
-				plat/${PLAT}/aarch64/plat_common.c
+				${MTK_PLAT_SOC}/bl2_plat_setup.c \
+				${MTK_PLAT_SOC}/plat_security.c \
+				plat/common/aarch64/plat_common.c
 
-BL31_SOURCES		+=	drivers/arm/cci400/cci400.c \
-				drivers/arm/gic/arm_gic.c \
-				drivers/arm/gic/gic_v2.c \
-				drivers/arm/gic/gic_v3.c \
-				drivers/arm/tzc400/tzc400.c \
+BL31_SOURCES		+=	drivers/arm/cci/cci.c \
+				drivers/arm/gic/v2/gicv2_main.c \
+				drivers/arm/gic/v3/gicv3_main.c \
+				drivers/arm/tzc/tzc400.c \
 				lib/cpus/aarch64/aem_generic.S \
 				lib/cpus/aarch64/cortex_a53.S \
 				lib/cpus/aarch64/cortex_a57.S \
 				plat/common/aarch64/platform_mp_stack.S \
-				plat/${PLAT}/bl31_plat_setup.c \
-				plat/${PLAT}/plat_gic.c \
-				plat/${PLAT}/plat_pm.c \
-				plat/${PLAT}/plat_security.c \
-				plat/${PLAT}/plat_topology.c \
-				plat/${PLAT}/scu.c \
-				plat/${PLAT}/mailbox.c \
-				plat/${PLAT}/aarch64/plat_helpers.S \
-				plat/${PLAT}/aarch64/platform_common.c \
-				plat/${PLAT}/drivers/uart/uart.c \
-				plat/${PLAT}/drivers/timer/mt_cpuxgpt.c \
-				plat/${PLAT}/drivers/pwrc/plat_pwrc.c \
-				plat/${PLAT}/drivers/devapc/devapc.c \
-				plat/${PLAT}/drivers/l2c/l2c.c \
-				plat/${PLAT}/drivers/emi/emi_mpu.c \
-				plat/${PLAT}/drivers/sec/rng.c
+				${MTK_PLAT}/common/drivers/pmic_wrap/pmic_wrap_init.c	\
+				${MTK_PLAT}/common/params_setup.c                     \
+				${MTK_PLAT}/common/drivers/rtc/rtc_common.c	\
+				${MTK_PLAT}/common/mtk_plat_common.c		\
+				${MTK_PLAT}/common/mtk_sip_svc.c		\
+				${MTK_PLAT_SOC}/bl31_plat_setup.c \
+				${MTK_PLAT_SOC}/plat_gic.c \
+				${MTK_PLAT_SOC}/plat_pm.c \
+				${MTK_PLAT_SOC}/plat_security.c \
+				${MTK_PLAT_SOC}/plat_topology.c \
+				${MTK_PLAT_SOC}/scu.c \
+				${MTK_PLAT_SOC}/mailbox.c \
+				${MTK_PLAT_SOC}/aarch64/plat_helpers.S \
+				${MTK_PLAT_SOC}/aarch64/platform_common.c \
+				${MTK_PLAT_SOC}/drivers/uart/uart.c \
+				${MTK_PLAT_SOC}/drivers/timer/mt_cpuxgpt.c \
+				${MTK_PLAT_SOC}/drivers/pwrc/plat_pwrc.c \
+				${MTK_PLAT_SOC}/drivers/devapc/devapc.c \
+				${MTK_PLAT_SOC}/drivers/l2c/l2c.c \
+				${MTK_PLAT_SOC}/drivers/emi/emi_mpu.c \
+				${MTK_PLAT_SOC}/drivers/sec/rng.c \
+				${MTK_PLAT_SOC}/drivers/rtc/rtc.c \
+				${MTK_PLAT_SOC}/drivers/log/log.c
 
-BL31_SOURCES += plat/${PLAT}/sip_svc/sip_svc_common.c \
-				plat/${PLAT}/sip_svc/sip_svc_setup.c \
-				plat/${PLAT}/drivers/log/log.c
+#BL31_SOURCES += ${MTK_PLAT_SOC}/sip_svc/sip_svc_common.c \
+				${MTK_PLAT_SOC}/sip_svc/sip_svc_setup.c \
+				${MTK_PLAT_SOC}/drivers/log/log.c
 
 ifeq (${SPD}, tbase)
-BL31_SOURCES += plat/${PLAT}/plat_tbase.c
+BL31_SOURCES += ${MTK_PLAT_SOC}/plat_tbase.c
 endif
 ifeq (${SPD}, teeid)
-BL31_SOURCES += plat/${PLAT}/plat_teei.c
+BL31_SOURCES += ${MTK_PLAT_SOC}/plat_teei.c
 endif
 
 # Flag used by the MTK_platform port to determine the version of ARM GIC architecture

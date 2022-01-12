@@ -27,12 +27,12 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-
+#include <mtk_plat_common.h>
 #include <arch.h>
 #include <arch_helpers.h>
 #include <assert.h>
 #include <bl_common.h>
-#include <bl31.h>
+#include <bl31/bl31.h>
 #include <console.h>
 #include <mmio.h>
 #include <platform.h>
@@ -42,23 +42,27 @@
 #include "plat_private.h"   //for kernel_info and related API
 #include <stdio.h>  //for printf
 #include <string.h>
-#include <xlat_tables.h>	// for ATF log implementation, mmap_region_add
+#include <lib/xlat_tables/xlat_tables.h>	// for ATF log implementation, mmap_region_add
 #include "l2c.h"
 #include "mt_cpuxgpt.h" // for atf_sched_clock_init(normal_base, atf_base);
 #include "emi_drv.h"
-
+#include <plat/common/common_def.h>
+#include <pl011.h>
 /*******************************************************************************
  * Declarations of linker defined symbols which will help us find the layout
  * of trusted SRAM
  ******************************************************************************/
-extern void bl31_on_entrypoint(void);
 
+static entry_point_info_t bl32_ep_info;
+static entry_point_info_t bl33_ep_info;
+extern void bl31_on_entrypoint(void);
+/*
 extern unsigned long __RO_START__;
 extern unsigned long __RO_END__;
 
 extern unsigned long __COHERENT_RAM_START__;
 extern unsigned long __COHERENT_RAM_END__;
-
+*/
 /*
  * The next 2 constants identify the extents of the code & RO data region.
  * These addresses are used by the MMU setup code and therefore they must be
@@ -79,18 +83,14 @@ extern unsigned long __COHERENT_RAM_END__;
 #define BL31_COHERENT_RAM_LIMIT (unsigned long)(&__COHERENT_RAM_END__)
 
 
-#if RESET_TO_BL31
 static entry_point_info_t bl32_image_ep_info;
 static entry_point_info_t bl33_image_ep_info;
-#else
 /*******************************************************************************
  * Reference to structure which holds the arguments that have been passed to
  * BL31 from BL2.
  ******************************************************************************/
-static bl31_params_t *bl2_to_bl31_params;
-#endif
+//static bl31_params_t *bl2_to_bl31_params;
 
-atf_arg_t gteearg;
 unsigned int gis_abnormal_boot=NO_ABNORMAL_BOOT_TAG;
 
 /*******************************************************************************
@@ -114,8 +114,8 @@ entry_point_info_t *bl31_plat_get_next_image_ep_info(uint32_t type)
 	assert(sec_state_is_valid(type));
 
 	next_image_info = (type == NON_SECURE) ?
-		bl2_to_bl31_params->bl33_ep_info :
-		bl2_to_bl31_params->bl32_ep_info;
+		&bl33_ep_info :
+		&bl32_ep_info;
 
 	/* None of the images on this platform can have 0x0 as the entrypoint */
 	if (next_image_info->pc)
@@ -127,7 +127,7 @@ entry_point_info_t *bl31_plat_get_next_image_ep_info(uint32_t type)
 
 entry_point_info_t *bl31_plat_get_next_kernel64_ep_info(uint32_t type)
 {
-	entry_point_info_t *next_image_info;
+    entry_point_info_t *next_image_info;
     unsigned long el_status;
     unsigned int mode;
 
@@ -158,7 +158,7 @@ entry_point_info_t *bl31_plat_get_next_kernel64_ep_info(uint32_t type)
     next_image_info->args.arg0=get_kernel_info_r0();
     next_image_info->args.arg1=get_kernel_info_r1();
 
-    printf("pc=0x%llx, r0=0x%llx, r1=0x%llx\n",
+    printf("pc=0x%lx, r0=0x%lx, r1=0x%lx\n",
            next_image_info->pc,
            next_image_info->args.arg0,
            next_image_info->args.arg1);
@@ -193,20 +193,20 @@ entry_point_info_t *bl31_plat_get_next_kernel32_ep_info(uint32_t type)
  * has flushed this information to memory, so we are guaranteed to pick up good
  * data
  ******************************************************************************/
-
-void bl31_early_platform_setup(bl31_params_t *from_bl2,
-				void *plat_params_from_bl2)
+void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
+				u_register_t arg2, u_register_t arg3)
 {
+    struct atf_arg_t *teearg;
     unsigned long long normal_base;
     unsigned long long atf_base;
     struct boot_tag *pboot_tag;
     struct boot_tag *tags;
-
+    static console_t console;
     config_L2_size();
 
     /* copy tee boot argument into ATF structure */
     memcpy((void *)&gteearg, (void *)(uintptr_t)TEE_BOOT_INFO_ADDR, sizeof(atf_arg_t));
-    atf_arg_t_ptr teearg = &gteearg;
+    teearg = &gteearg;
 
 
     // overwrite core0 reset address, to avoid overwrite tee boot argument
@@ -221,7 +221,7 @@ void bl31_early_platform_setup(bl31_params_t *from_bl2,
 
 	/* Initialize the console to provide early debug support */
 //    console_init(UART2_BASE); // without boot argument
-	console_init(teearg->atf_log_port);
+	console_pl011_register(PL011_UART1_BASE, PL011_UART2_CLK_IN_HZ, PL011_BAUDRATE, &console);
 
     pboot_tag = (struct boot_tag *)(uintptr_t)BOOT_ARGUMENT_LOCATION;
     /* Iterate each BOOT TAG from preloader */
@@ -314,7 +314,7 @@ void bl31_early_platform_setup(bl31_params_t *from_bl2,
 	assert(from_bl2->h.type == PARAM_BL31);
 	assert(from_bl2->h.version >= VERSION_1);
 
-	bl2_to_bl31_params = from_bl2;
+	//bl2_to_bl31_params = from_bl2;
 	assert(((unsigned long)plat_params_from_bl2) == FVP_BL31_PLAT_PARAM_VAL);
 #endif
 
@@ -371,13 +371,12 @@ void bl31_platform_setup(void)
 void bl31_plat_arch_setup(void)
 {
     unsigned long mpidr = read_mpidr();
-
+    struct atf_arg_t *teearg;
     // 32 bit only is set in preloader
     // ATF project is set in ATF, DTAH bit is cleared by warm reset
     // Only Core0 set DATH bit here,
     // L2ACTLR must be written before MMU on and any ACE, CHI or ACP traffic
     workaround_836870(mpidr);
-
     /*
      * clear CNTVOFF for core 0
      */
@@ -396,7 +395,7 @@ void bl31_plat_arch_setup(void)
     printf("###@@@ MP0_MISC_CONFIG3:0x%08x @@@###\n", mmio_read_32(MP0_MISC_CONFIG3));
 
     {
-        atf_arg_t_ptr teearg = (atf_arg_t_ptr)(uintptr_t)TEE_BOOT_INFO_ADDR;
+        teearg = (struct atf_arg_t *)(uintptr_t)TEE_BOOT_INFO_ADDR;
         if(teearg->atf_log_buf_size !=0 ) {
             printf("mmap atf buffer : 0x%x, 0x%x\n\r", teearg->atf_log_buf_start,
                 teearg->atf_log_buf_size);

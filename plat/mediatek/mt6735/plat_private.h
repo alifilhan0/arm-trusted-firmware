@@ -33,13 +33,15 @@
 
 #include <bl_common.h>
 #include <platform_def.h>
-
+void mt_atf_trigger_irq();
+int plat_pwrc_setup(void);
 #define DEVINFO_SIZE 4
 #define HRID_SIZE 2
-
+void gic_dist_save(void);
+void gic_dist_restore(void);
 #define LINUX_KERNEL_32 0
 #define LINUX_KERNEL_64 1
-
+void plat_cci_disable(void);
 typedef volatile struct mailbox {
 	unsigned long value
 	__attribute__((__aligned__(CACHE_WRITEBACK_GRANULE)));
@@ -51,7 +53,7 @@ typedef volatile struct mailbox {
  * and bl31_plat_params and its elements
  ******************************************************************************/
 typedef struct bl2_to_bl31_params_mem {
-	bl31_params_t bl31_params;
+//	bl31_params_t bl31_params;
 	image_info_t bl31_image_info;
 	image_info_t bl32_image_info;
 	image_info_t bl33_image_info;
@@ -76,7 +78,7 @@ typedef struct {
     unsigned int atf_aee_debug_buf_start;
     unsigned int atf_aee_debug_buf_size;
 } atf_arg_t, *atf_arg_t_ptr;
-
+/*
 struct kernel_info {
     uint64_t pc;
     uint64_t r0;
@@ -84,7 +86,7 @@ struct kernel_info {
     uint64_t r2;
     uint64_t k32_64;
 };
-
+*/
 /*******************************************************************************
  * Forward declarations
  ******************************************************************************/
@@ -126,21 +128,21 @@ void plat_io_setup(void);
 void plat_security_setup(void);
 
 /* Gets the SPR for BL32 entry */
-uint32_t plat_get_spsr_for_bl32_entry(void);
+//uint32_t plat_get_spsr_for_bl32_entry(void);
 
 /* Gets the SPSR for BL33 entry */
-uint32_t plat_get_spsr_for_bl33_entry(void);
+//uint32_t plat_get_spsr_for_bl33_entry(void);
 
-void enable_ns_access_to_cpuectlr(void);
+//void enable_ns_access_to_cpuectlr(void);
 //L2ACTLR must be written before MMU on and any ACE, CHI or ACP traffic
 int workaround_836870(unsigned long mpidr);
 int clear_cntvoff(unsigned long mpidr);
 
-uint64_t get_kernel_k32_64(void);
-uint64_t get_kernel_info_pc(void);
-uint64_t get_kernel_info_r0(void);
-uint64_t get_kernel_info_r1(void);
-uint64_t get_kernel_info_r2(void);
+//uint64_t get_kernel_k32_64(void);
+//uint64_t get_kernel_info_pc(void);
+//uint64_t get_kernel_info_r0(void);
+//uint64_t get_kernel_info_r1(void);
+//uint64_t get_kernel_info_r2(void);
 
 #define NO_ABNORMAL_BOOT_TAG 0xffffffff
 /* Boot tag */
@@ -148,6 +150,34 @@ uint64_t get_kernel_info_r2(void);
 struct boot_tag_is_abnormal_boot {
 	uint32_t is_abnormal_boot;
 };
+
+
+extern unsigned int BOOT_ARGUMENT_LOCATION;
+extern unsigned int BOOT_ARGUMENT_SIZE;
+extern unsigned int BL33_START_ADDRESS;
+extern unsigned int TEE_BOOT_INFO_ADDR;
+
+struct atf_aee_regs {
+    uint64_t    regs[31];
+    uint64_t    sp;
+    uint64_t    pc;
+    uint64_t    pstate;
+};
+
+/* WDT callback function */
+void aee_wdt_dump();
+extern uint64_t wdt_kernel_cb_addr;
+
+/* for chip version */
+typedef enum {
+    CHIP_SW_VER_01 = 0x0000,
+    CHIP_SW_VER_02 = 0x0001
+} CHIP_SW_VER;
+
+unsigned int mt_get_chip_hw_code(void);
+CHIP_SW_VER mt_get_chip_sw_ver(void);
+
+void dump_wfi_spill(void);
 
 struct boot_tag_header {
 	uint32_t size;

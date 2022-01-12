@@ -97,7 +97,7 @@ typedef unsigned int U32;
 typedef signed int S32;
 typedef unsigned long long U64;
 typedef signed long long S64;
-typedef unsigned char bool;
+//typedef unsigned char bool;
 
 //------------------------------------------------------------------
 
@@ -172,15 +172,15 @@ typedef u32 dma_addr_t;
 #ifndef NULL
 #define NULL    0
 #endif
-
+/*
 enum boolean
-{ false, true };
+{ false, true };*/
 enum
 { RX, TX, NONE };
 
 
 #ifndef BOOL
-typedef unsigned char BOOL;
+//typedef unsigned char BOOL;
 #endif
 
 typedef enum
@@ -272,10 +272,10 @@ extern uint32_t READ_REGISTER_UINT32(uintptr_t addr);
 #define __raw_writeb(VAL, REG)      DRV_WriteReg8(REG,VAL)
 #define __raw_writew(VAL, REG)      DRV_WriteReg16(REG,VAL)
 #define __raw_writel(VAL, REG)      DRV_WriteReg32(REG,VAL)
-
+/*
 #define dsb()	\
 	__asm__ __volatile__("mcr p15, 0, %0, c7, c10, 4" : : "r" (0) : "memory")
-
+*/
 extern void platform_assert(char *file, int line, char *expr);
 
 #define ASSERT(expr) \

@@ -36,6 +36,7 @@
 #include <mmio.h>
 #include <platform.h>
 #include <platform_def.h>
+#include <pl011.h>
 #include "../../bl1/bl1_private.h"
 #include "plat_def.h"
 #include "plat_private.h"
@@ -44,8 +45,8 @@
  * Declarations of linker defined symbols which will help us find the layout
  * of trusted SRAM
  ******************************************************************************/
-extern unsigned long __COHERENT_RAM_START__;
-extern unsigned long __COHERENT_RAM_END__;
+//extern unsigned long __COHERENT_RAM_START__;
+//extern unsigned long __COHERENT_RAM_END__;
 
 /*
  * The next 2 constants identify the extents of the coherent memory region.
@@ -56,7 +57,7 @@ extern unsigned long __COHERENT_RAM_END__;
  */
 #define BL1_COHERENT_RAM_BASE (unsigned long)(&__COHERENT_RAM_START__)
 #define BL1_COHERENT_RAM_LIMIT (unsigned long)(&__COHERENT_RAM_END__)
-
+static console_t console;
 /* Data structure which holds the extents of the trusted SRAM for BL1*/
 static meminfo_t bl1_tzram_layout;
 
@@ -70,23 +71,23 @@ meminfo_t *bl1_plat_sec_mem_layout(void)
  ******************************************************************************/
 void bl1_early_platform_setup(void)
 {
-	const size_t bl1_size = BL1_RAM_LIMIT - BL1_RAM_BASE;
+//	const size_t __maybe_unused bl1_size = BL1_RAM_LIMIT - BL1_RAM_BASE;
 
 	/* Initialize the console to provide early debug support */
-	console_init(PL011_UART0_BASE, PL011_UART0_CLK_IN_HZ, PL011_BAUDRATE);
+	console_pl011_register(PL011_UART0_BASE, PL011_UART0_CLK_IN_HZ, PL011_BAUDRATE, &console);
 
 	/* Allow BL1 to see the whole Trusted RAM */
 	bl1_tzram_layout.total_base = FVP_TRUSTED_SRAM_BASE;
 	bl1_tzram_layout.total_size = FVP_TRUSTED_SRAM_SIZE;
 
 	/* Calculate how much RAM BL1 is using and how much remains free */
-	bl1_tzram_layout.free_base = FVP_TRUSTED_SRAM_BASE;
+/*	bl1_tzram_layout.free_base = FVP_TRUSTED_SRAM_BASE;
 	bl1_tzram_layout.free_size = FVP_TRUSTED_SRAM_SIZE;
 	reserve_mem(&bl1_tzram_layout.free_base,
 		    &bl1_tzram_layout.free_size,
 		    BL1_RAM_BASE,
 		    bl1_size);
-
+*/
 	/* Initialize the platform config for future decision making */
 	plat_config_setup();
 }

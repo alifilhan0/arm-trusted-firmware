@@ -31,7 +31,7 @@
 #include <arch.h>
 #include <asm_macros.S>
 #include <bl_common.h>
-#include <gic_v2.h>
+#include <gicv2.h>
 #include "../plat_def.h"
 #include <pl011.h>
 #include "../drivers/pwrc/plat_pwrc.h"
@@ -43,7 +43,7 @@
 	.globl	platform_is_primary_cpu
 	.globl	plat_crash_console_init
 	.globl	plat_crash_console_putc
-
+/*
 	.macro	plat_choose_gicmmap  param1, param2, x_tmp, w_tmp, res
 	ldr	\x_tmp, =VE_SYSREGS_BASE + V2M_SYS_ID
 	ldr	\w_tmp, [\x_tmp]
@@ -51,7 +51,7 @@
 	cmp	\w_tmp, #BLD_GIC_VE_MMAP
 	csel	\res, \param1, \param2, eq
 	.endm
-
+*/
 	/* -----------------------------------------------------
 	 * void plat_secondary_cold_boot_setup (void);
 	 *
@@ -64,6 +64,7 @@
 	 * -----------------------------------------------------
 	 */
 func plat_secondary_cold_boot_setup
+#ifndef EL3_PAYLOAD_BASE
 	/* ---------------------------------------------
 	 * Power down this cpu.
 	 * TODO: Do we need to worry about powering the
@@ -73,19 +74,8 @@ func plat_secondary_cold_boot_setup
 	 * ---------------------------------------------
 	 */
 	mrs	x0, mpidr_el1
-	ldr	x1, =PWRC_BASE
+	mov_imm	x1, PWRC_BASE
 	str	w0, [x1, #PPOFFR_OFF]
-
-	/* ---------------------------------------------
-	 * Deactivate the gic cpu interface as well
-	 * ---------------------------------------------
-	 */
-	ldr	x0, =VE_GICC_BASE
-	ldr	x1, =BASE_GICC_BASE
-	plat_choose_gicmmap	x0, x1, x2, w2, x1
-	mov	w0, #(IRQ_BYP_DIS_GRP1 | FIQ_BYP_DIS_GRP1)
-	orr	w0, w0, #(IRQ_BYP_DIS_GRP0 | FIQ_BYP_DIS_GRP0)
-	str	w0, [x1, #GICC_CTLR]
 
 	/* ---------------------------------------------
 	 * There is no sane reason to come out of this
@@ -95,9 +85,19 @@ func plat_secondary_cold_boot_setup
 	 */
 	dsb	sy
 	wfi
-cb_panic:
-	b	cb_panic
+	no_ret	plat_panic_handler
+#else
+	mov_imm	x0, PLAT_ARM_TRUSTED_MAILBOX_BASE
 
+	/* Wait until the entrypoint gets populated */
+poll_mailbox:
+	ldr	x1, [x0]
+	cbz	x1, 1f
+	br	x1
+1:
+	wfe
+	b	poll_mailbox
+#endif
 
 	/* -----------------------------------------------------
 	 * void platform_get_entrypoint (unsigned int mpid);
@@ -139,10 +139,11 @@ func platform_get_entrypoint
 func platform_get_entrypoint
 	mov	x9, x30 // lr
 
-	// Check first_boot flag
-	// if first_boot flag is not 0, do cold boot initialization,
-	// then set first_boot flag to 0
-	// else, it's warm boot, jump via mailbox
+        /*Check first_boot flag
+	 if first_boot flag is not 0, do cold boot initialization,
+	 then set first_boot flag to 0
+	 else, it's warm boot, jump via mailbox
+	*/
 	ldr		x1, =first_boot
 	ldr		w2, [x1]
 	cmp		w2, #0
@@ -198,6 +199,7 @@ loop:
 	 * to indicate where we are
 	 * ---------------------------------------------
 	 */
+	 /*
 func plat_report_exception
 	mrs	x1, CurrentEl
 	lsr	x1, x1, #MODE_EL_SHIFT
@@ -210,7 +212,7 @@ func plat_report_exception
 	add	x1, x1, #V2M_SYS_LED
 	str	w0, [x1]
 	ret
-
+*/
         .globl read_l2actlr
 func read_l2actlr
         dsb sy

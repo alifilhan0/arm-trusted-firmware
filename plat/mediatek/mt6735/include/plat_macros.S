@@ -27,9 +27,9 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#include <cci400.h>
-#include <gic_v2.h>
-#include <plat_config.h>
+#include <drivers/arm/cci.h>
+#include <drivers/arm/gic_common.h>
+#include <drivers/arm/gicv2.h>
 #include "../plat_def.h"
 
 .section .rodata.gic_reg_name, "aS"

@@ -32,17 +32,26 @@
 #define __PLATFORM_DEF_H__
 
 #include <arch.h>
-
+#include <plat/common/common_def.h>
 #define CFG_FPGA_PLATFORM 0
 #define PLAT_USE_EL1_AARCH32
 #define DEBUG_XLAT_TABLE 0
-
+#define IO_SUCCESS		(0)
+#define IO_FAIL			(-1)
+#define IO_NOT_SUPPORTED	(-2)
+#define IO_RESOURCES_EXHAUSTED	(-3)
 /*******************************************************************************
  * Platform binary types for linking
  ******************************************************************************/
+#define SOC_CHIP_ID                     U(0x6735)
+#define MTK_LOCAL_STATE_OFF     2
 #define PLATFORM_LINKER_FORMAT          "elf64-littleaarch64"
 #define PLATFORM_LINKER_ARCH            aarch64
-
+#define PLAT_MAX_RET_STATE      U(1)
+#define PLAT_MAX_PWR_LVL        U(2)
+#define PLAT_MAX_OFF_STATE          U(2)
+#define PLAT_PHY_ADDR_SPACE_SIZE    (1ULL << 32)
+#define PLAT_VIRT_ADDR_SPACE_SIZE   (1ULL << 32)
 /*******************************************************************************
  * Generic platform constants
  ******************************************************************************/
@@ -59,7 +68,7 @@
 #elif IMAGE_BL32
 #define PLATFORM_STACK_SIZE 0x440
 #endif
-
+#define PMIC_WRAP_BASE      (IO_PHYS + 0x10000)
 #define FIRMWARE_WELCOME_STR		"Booting Trusted Firmware\n"
 
 /* Trusted Boot Firmware BL2 */
@@ -102,7 +111,7 @@
 #define ATF_ARG_BASE      (0x00100000)
 #define ATF_ARG_SIZE      (0x10000)
 
-//ATF txet, ro, rw, MEMBASE + 48MB, Size: 192KB 
+//ATF txet, ro, rw, MEMBASE + 48MB, Size: 192KB
 #define TZRAM_BASE      (0x43000000)
 #define TZRAM_SIZE		0x20000
 
@@ -204,7 +213,7 @@
 #define BOOTROM_BOOT_ADDR	(INFRACFG_AO_BASE + 0x800)
 #define BOOTROM_SEC_CTRL	(INFRACFG_AO_BASE + 0x804)
 #define SW_ROM_PD			(1U << 31)
- 
+
 //#define MP0_MISC_CONFIG_BASE	(IO_PHYS + 0x00200000)
 #define MP0_MISC_CONFIG_BOOT_ADDR(cpu)	(MCUCFG_BASE + 0x38 + ((cpu) * 8))
 #define MP1_MISC_CONFIG_BOOT_ADDR(cpu)	(MCUCFG_BASE + 0x238 + ((cpu) * 8))

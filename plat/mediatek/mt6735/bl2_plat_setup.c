@@ -27,7 +27,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-
+#include <mtk_plat_common.h>
 #include <arch_helpers.h>
 #include <assert.h>
 #include <bl_common.h>
@@ -37,17 +37,23 @@
 #include <string.h>
 #include "plat_def.h"
 #include "plat_private.h"
+#include <pl011.h>
+#include <plat/arm/common/plat_arm.h>
+#include <common/desc_image_load.h>
+#include <lib/fconf/fconf.h>
+#include <lib/fconf/fconf_dyn_cfg_getter.h>
 
 /*******************************************************************************
  * Declarations of linker defined symbols which will help us find the layout
  * of trusted SRAM
  ******************************************************************************/
+/*
 extern unsigned long __RO_START__;
 extern unsigned long __RO_END__;
 
 extern unsigned long __COHERENT_RAM_START__;
 extern unsigned long __COHERENT_RAM_END__;
-
+*/
 /*
  * The next 2 constants identify the extents of the code & RO data region.
  * These addresses are used by the MMU setup code and therefore they must be
@@ -81,7 +87,7 @@ CASSERT((PARAMS_BASE + sizeof(bl2_to_bl31_params_mem_t)) <
  * Reference to structures which holds the arguments which need to be passed
  * to BL31
  ******************************************************************************/
-static bl31_params_t *bl2_to_bl31_params;
+//static bl31_params_t *bl2_to_bl31_params;
 static entry_point_info_t *bl31_ep_info;
 
 meminfo_t *bl2_plat_sec_mem_layout(void)
@@ -98,50 +104,40 @@ meminfo_t *bl2_plat_sec_mem_layout(void)
  * NOTE: This function should be called only once and should be done
  * before generating params to BL31
  ******************************************************************************/
-bl31_params_t *bl2_plat_get_bl31_params(void)
+struct bl_params *plat_get_next_bl_params(void)
 {
-	bl2_to_bl31_params_mem_t *bl31_params_mem;
+	struct bl_params *arm_bl_params;
+
+	arm_bl_params = arm_get_next_bl_params();
+
+#if __aarch64__ && !BL2_AT_EL3
+	const struct dyn_cfg_dtb_info_t *fw_config_info;
+	bl_mem_params_node_t *param_node;
+	uintptr_t fw_config_base = 0U;
+	entry_point_info_t *ep_info;
+
+	/* Get BL31 image node */
+	param_node = get_bl_mem_params_node(BL31_IMAGE_ID);
+	assert(param_node != NULL);
+
+	/* get fw_config load address */
+	fw_config_info = FCONF_GET_PROPERTY(dyn_cfg, dtb, FW_CONFIG_ID);
+	assert(fw_config_info != NULL);
+
+	fw_config_base = fw_config_info->config_addr;
+	assert(fw_config_base != 0U);
 
 	/*
-	 * Allocate the memory for all the arguments that needs to
-	 * be passed to BL31
+	 * Get the entry point info of BL31 image and override
+	 * arg1 of entry point info with fw_config base address
 	 */
-	bl31_params_mem = (bl2_to_bl31_params_mem_t *)PARAMS_BASE;
-	memset((void *)PARAMS_BASE, 0, sizeof(bl2_to_bl31_params_mem_t));
+	ep_info = &param_node->ep_info;
+	ep_info->args.arg1 = (uint32_t)fw_config_base;
+#endif /* __aarch64__ && !BL2_AT_EL3 */
 
-	/* Assign memory for TF related information */
-	bl2_to_bl31_params = &bl31_params_mem->bl31_params;
-	SET_PARAM_HEAD(bl2_to_bl31_params, PARAM_BL31, VERSION_1, 0);
-
-	/* Fill BL31 related information */
-	bl31_ep_info = &bl31_params_mem->bl31_ep_info;
-	bl2_to_bl31_params->bl31_image_info = &bl31_params_mem->bl31_image_info;
-	SET_PARAM_HEAD(bl2_to_bl31_params->bl31_image_info, PARAM_IMAGE_BINARY,
-						VERSION_1, 0);
-
-	/* Fill BL32 related information if it exists */
-	if (BL32_BASE) {
-		bl2_to_bl31_params->bl32_ep_info =
-					&bl31_params_mem->bl32_ep_info;
-		SET_PARAM_HEAD(bl2_to_bl31_params->bl32_ep_info,
-					PARAM_EP, VERSION_1, 0);
-		bl2_to_bl31_params->bl32_image_info =
-					&bl31_params_mem->bl32_image_info;
-		SET_PARAM_HEAD(bl2_to_bl31_params->bl32_image_info,
-					PARAM_IMAGE_BINARY,
-					VERSION_1, 0);
-	}
-
-	/* Fill BL33 related information */
-	bl2_to_bl31_params->bl33_ep_info = &bl31_params_mem->bl33_ep_info;
-	SET_PARAM_HEAD(bl2_to_bl31_params->bl33_ep_info,
-					PARAM_EP, VERSION_1, 0);
-	bl2_to_bl31_params->bl33_image_info = &bl31_params_mem->bl33_image_info;
-	SET_PARAM_HEAD(bl2_to_bl31_params->bl33_image_info, PARAM_IMAGE_BINARY,
-					VERSION_1, 0);
-
-	return bl2_to_bl31_params;
+	return arm_bl_params;
 }
+
 
 
 /*******************************************************************************
@@ -164,8 +160,9 @@ struct entry_point_info *bl2_plat_get_bl31_ep_info(void)
  ******************************************************************************/
 void bl2_early_platform_setup(meminfo_t *mem_layout)
 {
+	static console_t console;
 	/* Initialize the console to provide early debug support */
-	console_init(PL011_UART0_BASE, PL011_UART0_CLK_IN_HZ, PL011_BAUDRATE);
+	console_pl011_register(PL011_UART0_BASE, PL011_UART0_CLK_IN_HZ, PL011_BAUDRATE, &console);
 
 	/* Setup the BL2 memory layout */
 	bl2_tzram_layout = *mem_layout;
@@ -220,6 +217,7 @@ void bl2_plat_arch_setup(void)
  * the entrypoint of BL31 and set SPSR and security state.
  * On FVP we are only setting the security state, entrypoint
  ******************************************************************************/
+/*
 void bl2_plat_set_bl31_ep_info(image_info_t *bl31_image_info,
 					entry_point_info_t *bl31_ep_info)
 {
@@ -228,7 +226,7 @@ void bl2_plat_set_bl31_ep_info(image_info_t *bl31_image_info,
 					DISABLE_ALL_EXCEPTIONS);
 }
 
-
+*/
 /*******************************************************************************
  * Before calling this function BL32 is loaded in memory and its entrypoint
  * is set by load_image. This is a placeholder for the platform to change
@@ -265,10 +263,7 @@ void bl2_plat_get_bl32_meminfo(meminfo_t *bl32_meminfo)
 	 * Populate the extents of memory available for loading BL32.
 	 */
 	bl32_meminfo->total_base = BL32_BASE;
-	bl32_meminfo->free_base = BL32_BASE;
 	bl32_meminfo->total_size =
-			(TSP_SEC_MEM_BASE + TSP_SEC_MEM_SIZE) - BL32_BASE;
-	bl32_meminfo->free_size =
 			(TSP_SEC_MEM_BASE + TSP_SEC_MEM_SIZE) - BL32_BASE;
 }
 
@@ -280,6 +275,4 @@ void bl2_plat_get_bl33_meminfo(meminfo_t *bl33_meminfo)
 {
 	bl33_meminfo->total_base = DRAM_BASE;
 	bl33_meminfo->total_size = DRAM_SIZE - DRAM1_SEC_SIZE;
-	bl33_meminfo->free_base = DRAM_BASE;
-	bl33_meminfo->free_size = DRAM_SIZE - DRAM1_SEC_SIZE;
 }

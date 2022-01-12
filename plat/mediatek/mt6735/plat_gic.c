@@ -32,11 +32,12 @@
 #include <assert.h>
 #include <bl_common.h>
 #include <debug.h>
-#include <gic_v2.h>
-#include <gic_v3.h>
+#include <gicv2.h>
+#include <gicv2_private.h>
+#include <gic_common_private.h>
 #include <interrupt_mgmt.h>
 #include <platform.h>
-#include <plat_config.h>
+#include <plat/arm/common/arm_config.h>
 #include <stdint.h>
 #include "plat_def.h"
 #include "plat_private.h"
@@ -81,7 +82,7 @@ void gic_dist_save(void)
 	//dist_base = mt_get_cfgvar(CONFIG_GICD_ADDR);
 	dist_base = BASE_GICD_BASE;
 
-	gic_irqs = 32 * ((gicd_read_typer(dist_base) & IT_LINES_NO_MASK) + 1);
+	gic_irqs = 32 * ((gicd_read_typer(dist_base) & TYPER_IT_LINES_NO_MASK) + 1);
 
 	for (i = 0; i < DIV_ROUND_UP(gic_irqs, 16); i++)
 		gic_data[0].saved_spi_conf[i] =
@@ -118,11 +119,11 @@ void gic_dist_restore(void)
 //	dist_base = mt_get_cfgvar(CONFIG_GICD_ADDR);
 	dist_base = BASE_GICD_BASE;
 
-	gic_irqs = 32 * ((gicd_read_typer(dist_base) & IT_LINES_NO_MASK) + 1);
+	gic_irqs = 32 * ((gicd_read_typer(dist_base) & TYPER_IT_LINES_NO_MASK) + 1);
 
 	/* Disable the distributor before going further */
 	ctlr = gicd_read_ctlr(dist_base);
-	ctlr &= ~(ENABLE_GRP0 | ENABLE_GRP1);
+	ctlr &= ~(CTLR_ENABLE_G0_BIT | CTLR_ENABLE_G1_BIT);
 	gicd_write_ctlr(dist_base, ctlr);
 
 
@@ -145,7 +146,7 @@ void gic_dist_restore(void)
 		mmio_write_32(dist_base + GICD_ISPENDR + i * 4, gic_data[0].saved_spi_pending[i]);
 
 
-	gicd_write_ctlr(dist_base, ctlr | ENABLE_GRP0  | ENABLE_GRP1);
+	gicd_write_ctlr(dist_base, ctlr | CTLR_ENABLE_G0_BIT  | CTLR_ENABLE_G1_BIT);
 }
 
 /*
@@ -191,7 +192,7 @@ void gic_cpu_restore(void)
 	for (i = 0; i < DIV_ROUND_UP(32, 4); i++)
 		mmio_write_32(dist_base + GICD_IPRIORITYR + i * 4, 0xa0a0a0a0);
 
-	val = ENABLE_GRP0 | ENABLE_GRP1 | FIQ_EN | FIQ_BYP_DIS_GRP0;
+	val = CTLR_ENABLE_G0_BIT | CTLR_ENABLE_G1_BIT | FIQ_EN_BIT | FIQ_BYP_DIS_GRP0;
 	val |= IRQ_BYP_DIS_GRP0 | FIQ_BYP_DIS_GRP1 | IRQ_BYP_DIS_GRP1;
 
 	gicc_write_pmr(cpu_base, 0x1 << 7); //GIC_PRI_MASK);
@@ -383,10 +384,10 @@ void gic_cpuif_setup(unsigned int gicc_base)
 		gicv3_cpuif_setup();
 	}
 #endif
-	val = ENABLE_GRP0 | ENABLE_GRP1 | FIQ_EN | FIQ_BYP_DIS_GRP0;
+	val = CTLR_ENABLE_G0_BIT | CTLR_ENABLE_G1_BIT | FIQ_EN_BIT | FIQ_BYP_DIS_GRP0;
 	val |= IRQ_BYP_DIS_GRP0 | FIQ_BYP_DIS_GRP1 | IRQ_BYP_DIS_GRP1;
 
-    //val = ENABLE_GRP0 | ENABLE_GRP1;
+    //val = CTLR_ENABLE_G0_BIT | CTLR_ENABLE_G1_BIT;
 	gicc_write_pmr(gicc_base, GIC_PRI_MASK);
 	gicc_write_ctlr(gicc_base, val);
 	//gicc_write_ctlr(gicc_base, 0x1B);
@@ -402,7 +403,7 @@ void gic_cpuif_deactivate(unsigned int gicc_base)
 
 	/* Disable secure, non-secure interrupts and disable their bypass */
 	val = gicc_read_ctlr(gicc_base);
-	val &= ~(ENABLE_GRP0 | ENABLE_GRP1);
+	val &= ~(CTLR_ENABLE_G0_BIT | CTLR_ENABLE_G1_BIT);
 	val |= FIQ_BYP_DIS_GRP1 | FIQ_BYP_DIS_GRP0;
 	val |= IRQ_BYP_DIS_GRP0 | IRQ_BYP_DIS_GRP1;
 	gicc_write_ctlr(gicc_base, val);
@@ -435,7 +436,7 @@ void gic_pcpu_distif_setup(unsigned int gicd_base)
 	gicd_set_isenabler(gicd_base, FIQ_SMP_CALL_SGI);
 
 	for (irq_num = 0; irq_num < MIN_SPI_ID; irq_num++) {
-		if (gicd_get_igroupr(gicd_base, irq_num) == GRP1) {
+		if (gicd_get_igroupr(gicd_base, irq_num) == 1) {
 			/* only setup group 1 priortiy */
 			gicd_set_ipriorityr(
 				gicd_base,
@@ -504,7 +505,7 @@ void gic_distif_setup(unsigned int gicd_base)
 
 	/* Disable the distributor before going further */
 	ctlr = gicd_read_ctlr(gicd_base);
-	ctlr &= ~(ENABLE_GRP0 | ENABLE_GRP1);
+	ctlr &= ~(CTLR_ENABLE_G0_BIT | CTLR_ENABLE_G1_BIT);
 	gicd_write_ctlr(gicd_base, ctlr);
 
 	/*
@@ -512,7 +513,7 @@ void gic_distif_setup(unsigned int gicd_base)
 	 * IGROUPR registers to consider. Will be equal to the
 	 * number of IT_LINES
 	 */
-	num_ints = gicd_read_typer(gicd_base) & IT_LINES_NO_MASK;
+	num_ints = gicd_read_typer(gicd_base) & TYPER_IT_LINES_NO_MASK;
 	num_ints++;
 	for (ctr = 0; ctr < num_ints; ctr++)
     {
@@ -549,7 +550,7 @@ void gic_distif_setup(unsigned int gicd_base)
 
 	gic_pcpu_distif_setup(gicd_base);
 
-	gicd_write_ctlr(gicd_base, ctlr | ENABLE_GRP0  | ENABLE_GRP1);
+	gicd_write_ctlr(gicd_base, ctlr | CTLR_ENABLE_G0_BIT  | CTLR_ENABLE_G1_BIT);
 }
 
 #if 0
@@ -620,7 +621,7 @@ uint32_t plat_interrupt_type_to_line(uint32_t type, uint32_t security_state)
 	 * will be used when the secure world starts using GICv3.
 	 */
 #if MT_GIC_ARCH == 2
-	return gicv2_interrupt_type_to_line(gicc_base, type);
+	return plat_interrupt_type_to_line(gicc_base, type);
 #else
 #error "Invalid GIC architecture version specified for MT port"
 #endif
@@ -714,7 +715,7 @@ uint32_t plat_ic_get_interrupt_type(uint32_t id)
 
 
 	/* Assume that all secure interrupts are S-EL1 interrupts */
-	if (group == GRP0)
+	if (group == 0)
 		return INTR_TYPE_S_EL1;
 	else
 		return INTR_TYPE_NS;
@@ -798,7 +799,7 @@ void dump_wfi_spill(void)
 	unsigned int gicc_ctlr;
 	unsigned int emi_enable_rep;
 	unsigned int systracker_con;
-	unsigned int cpuid = platform_get_core_pos(read_mpidr());
+	unsigned int cpuid = plat_my_core_pos();
 
 	__asm__ volatile("mrs %0, isr_el1" : "=r" (isr_el1));
 	printf("[debug_wfi_spill] <%d> ISR_EL1 = 0x%x\n", cpuid, isr_el1);

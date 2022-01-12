@@ -30,15 +30,16 @@
 
 #include <arch.h>
 #include <arch_helpers.h>
-#include <arm_gic.h>
+//#include <arm_gic.h>
 #include <bl_common.h>
-#include <cci400.h>
+#include <cci.h>
 #include <debug.h>
 #include <mmio.h>
 #include <platform.h>
-#include <plat_config.h>
-#include <xlat_tables.h>
+#include <plat/arm/common/arm_config.h>
+#include <lib/xlat_tables/xlat_tables.h>
 #include "../plat_def.h"
+#include "../plat_private.h"
 
 /*******************************************************************************
  * plat_config holds the characteristics of the differences between the three
@@ -47,8 +48,11 @@
  * configuration) & used thereafter. Each BL will have its own copy to allow
  * independent operation.
  ******************************************************************************/
-plat_config_t plat_config;
-
+arm_config_t plat_config;
+static const int cci_map[] = {
+	PLAT_MT_CCI_CLUSTER0_SL_IFACE_IX,
+	PLAT_MT_CCI_CLUSTER1_SL_IFACE_IX
+};
 /*
  * Table of regions to map using the MMU.
  * This doesn't include TZRAM as the 'mem_layout' argument passed to
@@ -166,17 +170,9 @@ int plat_config_setup(void)
 	switch (bld) {
 #if 0
 	case BLD_GIC_VE_MMAP:
-		plat_config.gicd_base = VE_GICD_BASE;
-		plat_config.gicc_base = VE_GICC_BASE;
-		plat_config.gich_base = VE_GICH_BASE;
-		plat_config.gicv_base = VE_GICV_BASE;
 		break;
 #endif
 	case BLD_GIC_A53A57_MMAP:
-		plat_config.gicd_base = BASE_GICD_BASE;
-		plat_config.gicc_base = BASE_GICC_BASE;
-		plat_config.gich_base = BASE_GICH_BASE;
-		plat_config.gicv_base = BASE_GICV_BASE;
 		break;
 	default:
 		ERROR("Unsupported board build %x\n", bld);
@@ -189,16 +185,7 @@ int plat_config_setup(void)
 	 */
 	switch (hbi) {
 	case HBI_MT_BASE:
-		plat_config.max_aff0 = 4;
-		plat_config.max_aff1 = 2;
-		// 4 cores do not need CCI
-		// 8 cores need CCI only, CONFIG_HAS_CCI
-
-#if defined(MACH_TYPE_MT6753)
-		plat_config.flags |= (CONFIG_BASE_MMAP | CONFIG_HAS_CCI);
-#else
-		plat_config.flags |= CONFIG_BASE_MMAP;
-#endif
+		arm_config.flags |= ARM_CONFIG_BASE_MMAP;
 		/*
 		 * Check for supported revisions
 		 * Allow future revisions to run but emit warning diagnostic
@@ -245,10 +232,9 @@ void plat_cci_init(void)
 	/*
 	 * Initialize CCI-400 driver
 	 */
-	if (plat_config.flags & CONFIG_HAS_CCI)
+	if (arm_config.flags & ARM_CONFIG_FVP_HAS_CCI400)
 		cci_init(CCI400_BASE,
-			CCI400_SL_IFACE3_CLUSTER_IX,
-			CCI400_SL_IFACE4_CLUSTER_IX);
+			cci_map, ARRAY_SIZE(cci_map));
 }
 
 void plat_cci_enable(void)
@@ -258,8 +244,7 @@ void plat_cci_enable(void)
 	 * for locks as no other cpu is active at the
 	 * moment
 	 */
-	if (plat_config.flags & CONFIG_HAS_CCI)
-		cci_enable_cluster_coherency(read_mpidr());
+	cci_enable_snoop_dvm_reqs(MPIDR_AFFLVL1_VAL(read_mpidr()));
 }
 
 /*******************************************************************************

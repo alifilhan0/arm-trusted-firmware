@@ -27,33 +27,40 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-
+#define MTK_CLUSTER_PWR_STATE(state)     (state)->pwr_domain_state[MTK_PWR_LVL1]
 #include <arch_helpers.h>
-#include <arm_gic.h>
+//#include <arm_gic.h>
 #include <assert.h>
 #include <bakery_lock.h>
-#include <cci400.h>
+#include <cci.h>
 #include <debug.h>
 #include <mmio.h>
 #include <platform.h>
-#include <plat_config.h>
+#include <plat/arm/common/arm_config.h>
+#include <plat/arm/board/common/v2m_def.h>
 #include <platform_def.h>
-#include <psci.h>
+#include <lib/psci/psci.h>
 #include <errno.h>
 #include "drivers/pwrc/plat_pwrc.h"
 #include "plat_def.h"
 #include "plat_private.h"
-
+#include "../../arm/board/fvp/fvp_private.h"
 #include <scu.h>
-#include <cortex_a57.h>
-
+#include <cortex_a53.h>
+#include <bl31/services/psci.h>
 #include "aarch64/plat_helpers.h"
 #include "mt_cpuxgpt.h" //  generic_timer_backup()
+#include <mtk_plat_common.h>
 
+#define MTK_PWR_LVL0	0
+#define MTK_PWR_LVL1	1
+#define MTK_PWR_LVL2	2
+
+static uintptr_t secure_entrypoint;
 unsigned long g_dormant_log_base = 0;
 void dormant_log(int tag)
 {
-        int cpuid = platform_get_core_pos(read_mpidr());
+        int cpuid = plat_my_core_pos();
 
         if (cpuid != 0 || g_dormant_log_base == 0)
                 return;
@@ -172,19 +179,19 @@ int clear_cntvoff(unsigned long mpidr)
 /*******************************************************************************
  * Private FVP function to program the mailbox for a cpu before it is released
  * from reset.
- ******************************************************************************/
+ ******************************************************************************/ /*
 static void plat_program_mailbox(uint64_t mpidr, uint64_t address)
 {
 	uint64_t linear_id;
 	mailbox_t *plat_mboxes;
 
-	linear_id = platform_get_core_pos(mpidr);
+	linear_id = plat_my_core_pos();
 	plat_mboxes = (mailbox_t *)MBOX_BASE;
 	plat_mboxes[linear_id].value = address;
 	flush_dcache_range((unsigned long) &plat_mboxes[linear_id],
 			   sizeof(unsigned long));
 }
-
+*/
 /*******************************************************************************
  * Function which implements the common FVP specific operations to power down a
  * cpu in response to a CPU_OFF or CPU_SUSPEND request.
@@ -207,7 +214,7 @@ static void plat_program_mailbox(uint64_t mpidr, uint64_t address)
 // 	uint64_t mpidr = read_mpidr_el1();
 //
 // 	/* Disable coherency if this cluster is to be turned off */
-// 	if (get_plat_config()->flags & CONFIG_HAS_CCI)
+// 	if (get_arm_config()->flags & CONFIG_HAS_CCI)
 // 		cci_disable_cluster_coherency(mpidr);
 //
 // 	/* Program the power controller to turn the cluster off */
@@ -219,7 +226,7 @@ static void plat_program_mailbox(uint64_t mpidr, uint64_t address)
  * should be performed for the specified affinity instance given its
  * state. Nothing needs to be done if the 'state' is not off or if this is not
  * the highest affinity level which will enter the 'state'.
- ******************************************************************************/
+ ******************************************************************************/ /*
 static int32_t plat_do_plat_actions(unsigned int afflvl, unsigned int state)
 {
 	unsigned int max_phys_off_afflvl;
@@ -228,66 +235,45 @@ static int32_t plat_do_plat_actions(unsigned int afflvl, unsigned int state)
 
 	if (state != PSCI_STATE_OFF)
 		return -EAGAIN;
-
+*/
 	/*
 	 * Find the highest affinity level which will be suspended and postpone
 	 * all the platform specific actions until that level is hit.
 	 */
-	max_phys_off_afflvl = psci_get_max_phys_off_afflvl();
+/*	max_phys_off_afflvl = psci_get_max_phys_off_afflvl();
 	assert(max_phys_off_afflvl != PSCI_INVALID_DATA);
 	if (afflvl != max_phys_off_afflvl)
 		return -EAGAIN;
 
 	return 0;
-}
+}*/
 
 /*******************************************************************************
  * FVP handler called when an affinity instance is about to enter standby.
  ******************************************************************************/
-int plat_affinst_standby(unsigned int power_state)
+static void plat_cpu_standby(plat_local_state_t cpu_state)
 {
-	unsigned int target_afflvl;
+	unsigned int scr;
 
-	/* Sanity check the requested state */
-	target_afflvl = psci_get_pstate_afflvl(power_state);
-
-	/*
-	 * It's possible to enter standby only on affinity level 0 i.e. a cpu
-	 * on the FVP. Ignore any other affinity level.
-	 */
-	if (target_afflvl != MPIDR_AFFLVL0)
-		return PSCI_E_INVALID_PARAMS;
-
-	/*
-	 * Enter standby state
-	 * dsb is good practice before using wfi to enter low power states
-	 */
+	scr = read_scr_el3();
+	write_scr_el3(scr | SCR_IRQ_BIT);
+	isb();
 	dsb();
 	wfi();
-
-	return PSCI_E_SUCCESS;
+	write_scr_el3(scr);
 }
 
 /*******************************************************************************
  * FVP handler called when an affinity instance is about to be turned on. The
  * level and mpidr determine the affinity instance.
  ******************************************************************************/
-int plat_affinst_on(unsigned long mpidr,
-		   unsigned long sec_entrypoint,
-		   unsigned long ns_entrypoint,
-		   unsigned int afflvl,
-		   unsigned int state)
+static int plat_power_domain_on(unsigned long mpidr)
 {
-	int rc = PSCI_E_SUCCESS;
 	unsigned long linear_id;
-
 	/*
 	 * It's possible to turn on only affinity level 0 i.e. a cpu
 	 * on the FVP. Ignore any other affinity level.
 	 */
-	if (afflvl != MPIDR_AFFLVL0)
-		return rc;
-
 	/*
 	 * Ensure that we do not cancel an inflight power off request
 	 * for the target cpu. That would leave it in a zombie wfi.
@@ -299,10 +285,10 @@ int plat_affinst_on(unsigned long mpidr,
 	// 	psysr = plat_pwrc_read_psysr(mpidr);
 	// } while (psysr & PSYSR_AFF_L0);
 
-	plat_program_mailbox(mpidr, sec_entrypoint);
+	//plat_program_mailbox(mpidr, sec_entrypoint);
 	// plat_pwrc_write_pponr(mpidr);
 
-	linear_id = platform_get_core_pos(mpidr);
+	linear_id = plat_my_core_pos();
 
 	extern void bl31_on_entrypoint(void);
 
@@ -316,8 +302,7 @@ int plat_affinst_on(unsigned long mpidr,
 		mmio_write_32(MP0_MISC_CONFIG_BOOT_ADDR(linear_id), (unsigned long)bl31_on_entrypoint);
 		printf("mt_on_0, entry %x\n", mmio_read_32(MP1_MISC_CONFIG_BOOT_ADDR(linear_id)));
 	}
-
-	return rc;
+        return 0;
 }
 
 /*******************************************************************************
@@ -331,16 +316,13 @@ int plat_affinst_on(unsigned long mpidr,
  * global variables across calls. It will be wise to do flush a write to the
  * global to prevent unpredictable results.
  ******************************************************************************/
-int plat_affinst_off(unsigned long mpidr,
-		    unsigned int afflvl,
-		    unsigned int state)
+static void plat_power_domain_off(const psci_power_state_t *state)
 {
 	/* Determine if any platform actions need to be executed */
-	if (plat_do_plat_actions(afflvl, state) == -EAGAIN)
-		return PSCI_E_SUCCESS;
 
 	unsigned int gicc_base, ectlr;
 
+	uint64_t mpidr = read_mpidr();
 	/*
 	 * If execution reaches this stage then this affinity level will be
 	 * suspended. Perform at least the cpu specific actions followed the
@@ -353,7 +335,7 @@ int plat_affinst_off(unsigned long mpidr,
 	 * the MTK_platform flavour supports the SMP bit.
 	 */
 	ectlr = read_cpuectlr();
-	ectlr &= ~CPUECTLR_SMP_BIT;
+	ectlr &= ~CORTEX_A53_ECTLR_SMP_BIT;
 	write_cpuectlr(ectlr);
 
 	/*
@@ -366,20 +348,18 @@ int plat_affinst_off(unsigned long mpidr,
 	/*
 	 * Perform cluster power down
 	 */
-	if (afflvl != MPIDR_AFFLVL0) {
+	if (MTK_CLUSTER_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
 		// plat_cluster_pwrdwn_common();
 
 		/*
 		 * Disable coherency if this cluster is to be
 		 * turned off
 		 */
-		if (get_plat_config()->flags & CONFIG_HAS_CCI) {
-			cci_disable_cluster_coherency(mpidr);
-		}
+
+		plat_cci_disable();
 		disable_scu(mpidr);
 	}
 
-	return PSCI_E_SUCCESS;
 }
 
 /*******************************************************************************
@@ -393,26 +373,21 @@ int plat_affinst_off(unsigned long mpidr,
  * global variables across calls. It will be wise to do flush a write to the
  * global to prevent unpredictable results.
  ******************************************************************************/
-int plat_affinst_suspend(unsigned long mpidr,
-			unsigned long sec_entrypoint,
-			unsigned long ns_entrypoint,
-			unsigned int afflvl,
-			unsigned int state)
+void plat_power_domain_suspend(const psci_power_state_t *state)
 {
 	unsigned int ectlr;
+	uint64_t mpidr = read_mpidr();
 	/* Determine if any platform actions need to be executed. */
-	if (plat_do_plat_actions(afflvl, state) == -EAGAIN)
-		return PSCI_E_SUCCESS;
 
 	//set cpu0 as aa64 for cpu reset
 	mmio_write_32(MP0_MISC_CONFIG3, mmio_read_32(MP0_MISC_CONFIG3) | (1<<12));
 
 	ectlr = read_cpuectlr();
-	ectlr &= ~CPUECTLR_SMP_BIT;
+	ectlr &= ~CORTEX_A53_ECTLR_SMP_BIT;
 	write_cpuectlr(ectlr);
 
 	/* Program the jump address for the target cpu */
-	plat_program_mailbox(read_mpidr_el1(), sec_entrypoint);
+	//plat_program_mailbox(read_mpidr_el1(), sec_entrypoint);
 
 	/* Program the power controller to enable wakeup interrupts. */
 	// plat_pwrc_set_wen(mpidr);
@@ -422,10 +397,9 @@ int plat_affinst_suspend(unsigned long mpidr,
 	gic_cpuif_deactivate(BASE_GICC_BASE);
 
 	/* Perform the common cluster specific operations */
-	if (afflvl != MPIDR_AFFLVL0) {
+	if (MTK_CLUSTER_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
 		// plat_cluster_pwrdwn_common();
-		if (get_plat_config()->flags & CONFIG_HAS_CCI)
-			cci_disable_cluster_coherency(mpidr);
+		plat_cci_disable();
 
 		disable_scu(mpidr);
 
@@ -434,7 +408,6 @@ int plat_affinst_suspend(unsigned long mpidr,
 		gic_dist_save();
 	}
 
-	return PSCI_E_SUCCESS;
 }
 
 /*******************************************************************************
@@ -444,19 +417,13 @@ int plat_affinst_suspend(unsigned long mpidr,
  * was turned off prior to wakeup and do what's necessary to setup it up
  * correctly.
  ******************************************************************************/
-int plat_affinst_on_finish(unsigned long mpidr,
-			  unsigned int afflvl,
-			  unsigned int state)
+void plat_power_domain_on_finish(const psci_power_state_t *state)
 {
-	int rc = PSCI_E_SUCCESS;
 	unsigned ectlr;
-
+	uint64_t mpidr = read_mpidr();
 	/* Determine if any platform actions need to be executed. */
-	if (plat_do_plat_actions(afflvl, state) == -EAGAIN)
-		return PSCI_E_SUCCESS;
-
 	/* Perform the common cluster specific operations */
-	if (afflvl != MPIDR_AFFLVL0) {
+	if (MTK_CLUSTER_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
 		/*
 		 * This CPU might have woken up whilst the cluster was
 		 * attempting to power down. In this case the FVP power
@@ -490,7 +457,7 @@ int plat_affinst_on_finish(unsigned long mpidr,
 	 * it.
 	 */
 	ectlr = read_cpuectlr();
-	ectlr |= CPUECTLR_SMP_BIT;
+	ectlr |= CORTEX_A53_ECTLR_SMP_BIT;
 	write_cpuectlr(ectlr);
 
 	/*
@@ -500,7 +467,7 @@ int plat_affinst_on_finish(unsigned long mpidr,
 	// plat_pwrc_clr_wen(mpidr);
 
 	/* Zero the jump address in the mailbox for this cpu */
-	plat_program_mailbox(read_mpidr_el1(), 0);
+	//plat_program_mailbox(read_mpidr_el1(), 0);
 
 	/* Enable the gic cpu interface */
 	// arm_gic_cpuif_setup();
@@ -513,7 +480,6 @@ int plat_affinst_on_finish(unsigned long mpidr,
 
 	enable_ns_access_to_cpuectlr();
 
-	return rc;
 }
 
 /*******************************************************************************
@@ -523,16 +489,14 @@ int plat_affinst_on_finish(unsigned long mpidr,
  * TODO: At the moment we reuse the on finisher and reinitialize the secure
  * context. Need to implement a separate suspend finisher.
  ******************************************************************************/
-int plat_affinst_suspend_finish(unsigned long mpidr,
-			       unsigned int afflvl,
-			       unsigned int state)
+void plat_power_domain_suspend_finish(const psci_power_state_t *state)
 {
-	if (afflvl != MPIDR_AFFLVL0) {
+	if (MTK_CLUSTER_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
 		plat_restore_el3_dormant_data();
 		gic_setup();
 		gic_dist_restore();
 	}
-	return plat_affinst_on_finish(mpidr, afflvl, state);
+	return plat_power_domain_on_finish(state);
 }
 
 /*******************************************************************************
@@ -541,8 +505,8 @@ int plat_affinst_suspend_finish(unsigned long mpidr,
 static void __dead2 plat_system_off(void)
 {
 	/* Write the System Configuration Control Register */
-	mmio_write_32(VE_SYSREGS_BASE + V2M_SYS_CFGCTRL,
-		CFGCTRL_START | CFGCTRL_RW | CFGCTRL_FUNC(FUNC_SHUTDOWN));
+	mmio_write_32(V2M_SYSREGS_BASE + V2M_SYS_CFGCTRL,
+		V2M_CFGCTRL_START | V2M_CFGCTRL_RW | V2M_CFGCTRL_FUNC(FUNC_SHUTDOWN));
 	wfi();
 	ERROR("FVP System Off: operation not handled.\n");
 	panic();
@@ -551,8 +515,8 @@ static void __dead2 plat_system_off(void)
 static void __dead2 plat_system_reset(void)
 {
 	/* Write the System Configuration Control Register */
-	mmio_write_32(VE_SYSREGS_BASE + V2M_SYS_CFGCTRL,
-		CFGCTRL_START | CFGCTRL_RW | CFGCTRL_FUNC(FUNC_REBOOT));
+	mmio_write_32(V2M_SYSREGS_BASE + V2M_SYS_CFGCTRL,
+		V2M_CFGCTRL_START | V2M_CFGCTRL_RW | V2M_CFGCTRL_FUNC(FUNC_REBOOT));
 	wfi();
 	ERROR("FVP System Reset: operation not handled.\n");
 	panic();
@@ -561,13 +525,13 @@ static void __dead2 plat_system_reset(void)
 /*******************************************************************************
  * Export the platform handlers to enable psci to invoke them
  ******************************************************************************/
-static const plat_pm_ops_t plat_plat_pm_ops = {
-	.affinst_standby = plat_affinst_standby,
-	.affinst_on = plat_affinst_on,
-	.affinst_off = plat_affinst_off,
-	.affinst_suspend = plat_affinst_suspend,
-	.affinst_on_finish = plat_affinst_on_finish,
-	.affinst_suspend_finish = plat_affinst_suspend_finish,
+static const plat_psci_ops_t plat_plat_pm_ops = {
+	.cpu_standby = plat_cpu_standby,
+	.pwr_domain_on = plat_power_domain_on,
+	.pwr_domain_off = plat_power_domain_off,
+	.pwr_domain_suspend = plat_power_domain_suspend,
+	.pwr_domain_on_finish = plat_power_domain_on_finish,
+	.pwr_domain_suspend_finish = plat_power_domain_suspend_finish,
 	.system_off = plat_system_off,
 	.system_reset = plat_system_reset
 };
@@ -575,8 +539,10 @@ static const plat_pm_ops_t plat_plat_pm_ops = {
 /*******************************************************************************
  * Export the platform specific power ops & initialize the plat power controller
  ******************************************************************************/
-int platform_setup_pm(const plat_pm_ops_t **plat_ops)
+int plat_setup_psci_ops(uintptr_t sec_entrypoint,
+			const plat_psci_ops_t **psci_ops)
 {
-	*plat_ops = &plat_plat_pm_ops;
+	*psci_ops = &plat_plat_pm_ops;
+	secure_entrypoint = sec_entrypoint;
 	return 0;
 }
