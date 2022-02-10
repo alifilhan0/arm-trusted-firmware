@@ -36,22 +36,20 @@
 #include <pl011.h>
 #include "../drivers/pwrc/plat_pwrc.h"
 
-	.globl	platform_get_entrypoint
+	.globl	plat_get_my_entrypoint
 	.globl	plat_secondary_cold_boot_setup
 	.globl	platform_mem_init
 	.globl	plat_report_exception
 	.globl	platform_is_primary_cpu
-	.globl	plat_crash_console_init
-	.globl	plat_crash_console_putc
-/*
-	.macro	plat_choose_gicmmap  param1, param2, x_tmp, w_tmp, res
-	ldr	\x_tmp, =VE_SYSREGS_BASE + V2M_SYS_ID
-	ldr	\w_tmp, [\x_tmp]
-	ubfx	\w_tmp, \w_tmp, #SYS_ID_BLD_SHIFT, #SYS_ID_BLD_LENGTH
-	cmp	\w_tmp, #BLD_GIC_VE_MMAP
-	csel	\res, \param1, \param2, eq
-	.endm
-*/
+	.globl  plat_my_core_pos
+	.globl	write_cpuectlr
+	.globl  read_l2actlr
+	.globl  write_l2actlr
+	.globl  read_l2ectlr
+	.globl  write_l2ectlr
+	.globl  read_cpuactlr
+	.globl  write_cpuactlr
+        .globl	read_cpuectlr
 	/* -----------------------------------------------------
 	 * void plat_secondary_cold_boot_setup (void);
 	 *
@@ -98,7 +96,7 @@ poll_mailbox:
 	wfe
 	b	poll_mailbox
 #endif
-
+endfunc plat_secondary_cold_boot_setup
 	/* -----------------------------------------------------
 	 * void platform_get_entrypoint (unsigned int mpid);
 	 *
@@ -120,23 +118,8 @@ poll_mailbox:
 	 * -----------------------------------------------------
 	 */
 
-/*
-func platform_get_entrypoint
-	mov	x9, x30 // lr
-	mov	x2, x0
-	ldr	x1, =PWRC_BASE
-	str	w2, [x1, #PSYSR_OFF]
-	ldr	w2, [x1, #PSYSR_OFF]
-	ubfx	w2, w2, #PSYSR_WK_SHIFT, #PSYSR_WK_MASK
-	cmp	w2, #WKUP_PPONR
-	beq	warm_reset
-	cmp	w2, #WKUP_GICREQ
-	beq	warm_reset
-	mov	x0, #0
-	b	exit
-*/
 
-func platform_get_entrypoint
+func plat_get_my_entrypoint
 	mov	x9, x30 // lr
 
         /*Check first_boot flag
@@ -161,14 +144,14 @@ warm_reset:
 	 * ---------------------------------------------
 	 */
 	ldr	x10, =MBOX_BASE
-	bl	platform_get_core_pos
+	bl	plat_my_core_pos
 	lsl	x0, x0, #CACHE_WRITEBACK_SHIFT
 	ldr	x0, [x10, x0]
 	cbz	x0, _panic
 exit:
 	ret	x9
 _panic:	b	_panic
-
+endfunc plat_get_my_entrypoint
 
 	/* -----------------------------------------------------
 	 * void platform_mem_init (void);
@@ -190,7 +173,7 @@ loop:
 	subs	w1, w1, #1
 	b.gt	loop
 	ret
-
+endfunc platform_mem_init
 	/* ---------------------------------------------
 	 * void plat_report_exception(unsigned int type)
 	 * Function to report an unhandled exception
@@ -199,84 +182,77 @@ loop:
 	 * to indicate where we are
 	 * ---------------------------------------------
 	 */
-	 /*
-func plat_report_exception
-	mrs	x1, CurrentEl
-	lsr	x1, x1, #MODE_EL_SHIFT
-	lsl	x1, x1, #SYS_LED_EL_SHIFT
-	lsl	x0, x0, #SYS_LED_EC_SHIFT
-	mov	x2, #(SECURE << SYS_LED_SS_SHIFT)
-	orr	x0, x0, x2
-	orr	x0, x0, x1
-	mov	x1, #VE_SYSREGS_BASE
-	add	x1, x1, #V2M_SYS_LED
-	str	w0, [x1]
+func plat_my_core_pos
+	mrs     x0, mpidr_el1
+	and     x1, x0, #MPIDR_CPU_MASK
+	and     x0, x0, #MPIDR_CLUSTER_MASK
+	add     x0, x1, x0, LSR #6
 	ret
-*/
-        .globl read_l2actlr
+endfunc plat_my_core_pos
+
 func read_l2actlr
         dsb sy
         MRS x0, S3_1_C15_C0_0     /* @Read L2ACTLR_EL1 into Rt */
         dsb sy
         isb
 	ret
+endfunc read_l2actlr
 
-        .globl write_l2actlr
 func write_l2actlr
         dsb sy
         MSR S3_1_C15_C0_0, x0     /* @write L2ACTLR_EL1 into Rt */
         isb
         dsb sy
 	ret
+endfunc write_l2actlr
 
-        .globl read_l2ectlr
 func read_l2ectlr
         MRS x0, S3_1_C11_C0_3     /* @Read L2ECTLR_EL1 into Rt */
         dsb sy
         isb
 	ret
+endfunc read_l2ectlr
 
-        .globl write_l2ectlr
 func write_l2ectlr
         dsb sy
         MSR S3_1_C11_C0_3, x0     /* @write L2ECTLR_EL1 into Rt */
         isb
         dsb sy
 	ret
+endfunc write_l2ectlr
 
-        .globl read_cpuactlr
 func read_cpuactlr
         dsb sy
         MRS x0, S3_1_C15_C2_0     /* @Read CPUACTLR_EL1 into Rt */
         dsb sy
         isb
 	ret
+endfunc read_cpuactlr
 
-        .globl write_cpuactlr
 func write_cpuactlr
         dsb sy
         MSR S3_1_C15_C2_0, x0     /* @write CPUACTLR_EL1 into Rt */
         isb
         dsb sy
 	ret
+endfunc write_cpuactlr
 
-	.globl	read_cpuectlr
 func read_cpuectlr
 	MRS	x0, S3_1_C15_C2_1
 	ret
+endfunc read_cpuectlr
 
-	.globl	write_cpuectlr
 func write_cpuectlr
 	MSR	S3_1_C15_C2_1, x0
 	ret
-
+endfunc write_cpuectlr
 
 func platform_is_primary_cpu
 	and	x0, x0, #(MPIDR_CLUSTER_MASK | MPIDR_CPU_MASK)
 	cmp	x0, #FVP_PRIMARY_CPU
 	cset	x0, eq
 	ret
-
+endfunc platform_is_primary_cpu
 	/* Define a crash console for the plaform */
 #define FVP_CRASH_CONSOLE_BASE		PL011_UART0_BASE
 
@@ -287,77 +263,6 @@ func platform_is_primary_cpu
 	 * Clobber list : x0, x1, x2
 	 * ---------------------------------------------
 	 */
-func plat_crash_console_init
-	mov_imm	x0, FVP_CRASH_CONSOLE_BASE
-	mov_imm	x1, PL011_UART0_CLK_IN_HZ
-	mov_imm	x2, PL011_BAUDRATE
-/*	b	console_core_init   */
-	ret
-
-	/* ---------------------------------------------
-	 * int plat_crash_console_putc(int c)
-	 * Function to print a character on the crash
-	 * console without a C Runtime.
-	 * Clobber list : x1, x2
-	 * ---------------------------------------------
-	 */
-func plat_crash_console_putc
-	b	mt_console_core_putc
-
-	/* --------------------------------------------------------
-	 * int mt_console_core_putc(int c, unsigned int base_addr)
-	 * Function to output a character over the console. It
-	 * returns the character printed on success or -1 on error.
-	 * In : w0 - character to be printed
-	 *      x1 - console base address
-	 * Out : return -1 on error else return character.
-	 * Clobber list : x0 x1 x2
-	 * --------------------------------------------------------
-	 */
-func mt_console_core_putc
-	/*
-	 * Check teearg->atf_log_buf_size.
-	   Exit if atf_log_buf_size equals 0
-	 */
-	adr	x2, ptr_atf_crash_flag
-	ldr	x2, [x2]
-	cbz x2, exit_putc	/* exit if ptr_atf_crash_flag equals NULL */
-
-	/*
-	 * set atf crash magic number
-	 */
-1:
-	adr	x2, ptr_atf_crash_flag
-	ldr	x2, [x2]
-	mov_imm x1, 0xdead1abf
-	str	w1, [x2]				/* p_atf_log_ctrl->atf_crash_flag = 0xdead1abf */
-
-    ldr	w2, [x2]		/* can't use w3 return addr, w4, start of buffer addr */
-	cmp	w2, w1
-	b.ne	1b
-
-	/*
-	 * get cpu id
-	 */
-	mrs	x1, mpidr_el1
-	and	x2, x1, #MPIDR_CPU_MASK			/* refer to platform_get_core_pos */
-	and	x1, x1, #MPIDR_CLUSTER_MASK
-	add	x1, x2, x1, LSR #6				/* x1 = cpu id (cpu id = aff0 + aff1*4 ) */
-
-	adr	x2, ptr_atf_except_write_pos_per_cpu
-	ldr	x2, [x2]
-	add x2, x2, x1, LSL # 3
-							/* plus (cpu_id * 8) --> &p_atf_log_ctrl->atf_except_write_pos_per_cpu[cpu_id]
-										   x2 = &p_atf_log_ctrl->atf_except_write_pos_per_cpu[cpu_id];
-										*/
-	/* log write */
-	ldr	x1, [x2]			/* w1 = p_atf_log_ctrl->atf_except_write_pos_per_cpu[cpu_id] */
-	strb	w0, [x1]		/* *x1 = w0 --> *(p_atf_log_ctrl->atf_except_write_pos_per_cpu[cpu_id]) = c) */
-	add	x1, x1, #1			/* w1++ */
-	str	x1, [x2]			/* p_atf_log_ctrl->atf_except_write_pos_per_cpu[cpu_id] = w1 */
-exit_putc:
-	ret
-
 
 	.data
 first_boot:

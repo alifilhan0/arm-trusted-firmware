@@ -90,32 +90,34 @@ PLAT_BL_COMMON_SOURCES := drivers/io/io_fip.c \
 				drivers/io/io_memmap.c \
 				drivers/io/io_semihosting.c \
 				drivers/io/io_storage.c \
+				lib/xlat_tables/xlat_tables_common.c \
 				lib/xlat_tables/aarch64/xlat_tables.c \
 				lib/semihosting/semihosting.c \
 				lib/semihosting/aarch64/semihosting_call.S \
 				drivers/arm/pl011/aarch64/pl011_console.S \
-				plat/common/aarch64/plat_common.c \
-				${MTK_PLAT_SOC}/plat_io_storage.c
+				${MTK_PLAT_SOC}/plat_io_storage.c \
+				plat/common/aarch64/crash_console_helpers.S
 
-BL1_SOURCES += drivers/arm/cci/cci.c \
+#BL1_SOURCES += drivers/arm/cci/cci.c \
 				lib/cpus/aarch64/aem_generic.S \
 				lib/cpus/aarch64/cortex_a53.S \
 				lib/cpus/aarch64/cortex_a57.S \
 				plat/common/aarch64/platform_up_stack.S \
 				${MTK_PLAT_SOC}/bl1_plat_setup.c \
-				plat/common/aarch64/plat_common.c \
 				${MTK_PLAT_SOC}/aarch64/plat_helpers.S
 
-BL2_SOURCES += drivers/arm/tzc/tzc400.c \
+#BL2_SOURCES += drivers/arm/tzc/tzc400.c \
 				plat/common/aarch64/platform_up_stack.S \
 				${MTK_PLAT_SOC}/bl2_plat_setup.c \
-				${MTK_PLAT_SOC}/plat_security.c \
-				plat/common/aarch64/plat_common.c
+				${MTK_PLAT_SOC}/plat_security.c
 
 BL31_SOURCES		+=	drivers/arm/cci/cci.c \
 				drivers/arm/gic/v2/gicv2_main.c \
 				drivers/arm/gic/v3/gicv3_main.c \
 				drivers/arm/tzc/tzc400.c \
+				drivers/arm/gic/v2/gicdv2_helpers.c \
+				drivers/arm/gic/v2/gicv2_helpers.c \
+				plat/common/plat_psci_common.c \
 				lib/cpus/aarch64/aem_generic.S \
 				lib/cpus/aarch64/cortex_a53.S \
 				lib/cpus/aarch64/cortex_a57.S \
@@ -125,6 +127,7 @@ BL31_SOURCES		+=	drivers/arm/cci/cci.c \
 				${MTK_PLAT}/common/drivers/rtc/rtc_common.c	\
 				${MTK_PLAT}/common/mtk_plat_common.c		\
 				${MTK_PLAT}/common/mtk_sip_svc.c		\
+				${MTK_PLAT_SOC}/aarch64/platform_common.c \
 				${MTK_PLAT_SOC}/bl31_plat_setup.c \
 				${MTK_PLAT_SOC}/plat_gic.c \
 				${MTK_PLAT_SOC}/plat_pm.c \
@@ -133,8 +136,6 @@ BL31_SOURCES		+=	drivers/arm/cci/cci.c \
 				${MTK_PLAT_SOC}/scu.c \
 				${MTK_PLAT_SOC}/mailbox.c \
 				${MTK_PLAT_SOC}/aarch64/plat_helpers.S \
-				${MTK_PLAT_SOC}/aarch64/platform_common.c \
-				${MTK_PLAT_SOC}/drivers/uart/uart.c \
 				${MTK_PLAT_SOC}/drivers/timer/mt_cpuxgpt.c \
 				${MTK_PLAT_SOC}/drivers/pwrc/plat_pwrc.c \
 				${MTK_PLAT_SOC}/drivers/devapc/devapc.c \

@@ -55,7 +55,7 @@
 /*******************************************************************************
  * Generic platform constants
  ******************************************************************************/
-
+#define PLATFORM_SYSTEM_COUNT               U(1)
 /* Size of cacheable stacks */
 #if DEBUG_XLAT_TABLE
 #define PLATFORM_STACK_SIZE 0x800

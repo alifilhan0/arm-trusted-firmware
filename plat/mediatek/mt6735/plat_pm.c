@@ -294,13 +294,9 @@ static int plat_power_domain_on(unsigned long mpidr)
 
 	if (linear_id >= 4) {
     	mmio_write_32(MP1_MISC_CONFIG3, mmio_read_32(MP1_MISC_CONFIG3) | 0x0000F000);
-		mmio_write_32(MP1_MISC_CONFIG_BOOT_ADDR(linear_id-4), (unsigned long)bl31_on_entrypoint);
-		printf("mt_on_1, entry %x\n", mmio_read_32(MP1_MISC_CONFIG_BOOT_ADDR(linear_id-4)));
 	} else {
 		/* set secondary CPUs to AArch64 */
 		mmio_write_32(MP0_MISC_CONFIG3, mmio_read_32(MP0_MISC_CONFIG3) | 0x0000E000);
-		mmio_write_32(MP0_MISC_CONFIG_BOOT_ADDR(linear_id), (unsigned long)bl31_on_entrypoint);
-		printf("mt_on_0, entry %x\n", mmio_read_32(MP1_MISC_CONFIG_BOOT_ADDR(linear_id)));
 	}
         return 0;
 }

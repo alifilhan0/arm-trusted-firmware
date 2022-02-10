@@ -158,7 +158,7 @@ void gic_cpu_save(void)
 	int cpuid;
 
 	mpidr = read_mpidr();
-	cpuid = platform_get_core_pos(mpidr);
+	cpuid = plat_my_core_pos(mpidr);
 
 	dist_base = mt_get_cfgvar(CONFIG_GICD_ADDR);
 
@@ -178,7 +178,7 @@ void gic_cpu_restore(void)
 	unsigned int val;
 
 	mpidr = read_mpidr();
-	cpuid = platform_get_core_pos(mpidr);
+	cpuid = plat_my_core_pos(mpidr);
 
 	dist_base = mt_get_cfgvar(CONFIG_GICD_ADDR);
 	cpu_base = mt_get_cfgvar(CONFIG_GICC_ADDR);
@@ -544,7 +544,7 @@ void gic_distif_setup(unsigned int gicd_base)
 	gicd_clr_igroupr(gicd_base, IRQ_TZ_WDOG);
 	gicd_set_ipriorityr(gicd_base, IRQ_TZ_WDOG, GIC_HIGHEST_SEC_PRIORITY);
 	gicd_set_itargetsr(gicd_base, IRQ_TZ_WDOG,
-			   platform_get_core_pos(read_mpidr()));
+			   plat_my_core_pos(read_mpidr()));
 	gicd_set_isenabler(gicd_base, IRQ_TZ_WDOG);
 #endif
 

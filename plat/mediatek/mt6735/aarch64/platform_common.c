@@ -48,7 +48,7 @@
  * configuration) & used thereafter. Each BL will have its own copy to allow
  * independent operation.
  ******************************************************************************/
-arm_config_t plat_config;
+arm_config_t arm_config;
 static const int cci_map[] = {
 	PLAT_MT_CCI_CLUSTER0_SL_IFACE_IX,
 	PLAT_MT_CCI_CLUSTER1_SL_IFACE_IX
@@ -212,7 +212,7 @@ unsigned long plat_get_ns_image_entrypoint(void)
     return BL33_START_ADDRESS;
 }
 
-uint64_t plat_get_syscnt_freq(void)
+unsigned int plat_get_syscnt_freq2(void)
 {
 	uint64_t counter_base_frequency;
 
@@ -247,6 +247,11 @@ void plat_cci_enable(void)
 	cci_enable_snoop_dvm_reqs(MPIDR_AFFLVL1_VAL(read_mpidr()));
 }
 
+void plat_cci_disable(void)
+{
+	cci_disable_snoop_dvm_reqs(MPIDR_AFFLVL1_VAL(read_mpidr()));
+}
+
 /*******************************************************************************
  * Gets SPSR for BL32 entry
  ******************************************************************************/
@@ -262,20 +267,3 @@ uint32_t plat_get_spsr_for_bl32_entry(void)
 /*******************************************************************************
  * Gets SPSR for BL33 entry
  ******************************************************************************/
-uint32_t plat_get_spsr_for_bl33_entry(void)
-{
-	unsigned int mode;
-	uint32_t spsr;
-
-    mode = MODE32_svc;
-	/*
-	 * TODO: Consider the possibility of specifying the SPSR in
-	 * the FIP ToC and allowing the platform to have a say as
-	 * well.
-	 */
-//	spsr = SPSR_64(mode, MODE_SP_ELX, DISABLE_ALL_EXCEPTIONS);
-	spsr = SPSR_MODE32 (mode, SPSR_T_ARM, SPSR_E_LITTLE,
-	            (DAIF_FIQ_BIT | DAIF_IRQ_BIT | DAIF_ABT_BIT));
-
-	return spsr;
-}

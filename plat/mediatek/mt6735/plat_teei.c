@@ -165,7 +165,7 @@ void migrate_gic_context(uint32_t secure_state)
 						val & ~(0xff << ((sec_exc[index] % 4) * 8)));
 			gicd_set_itargetsr(gicd_base,
 						sec_exc[index],
-						platform_get_core_pos(read_mpidr()));
+						plat_my_core_pos(read_mpidr()));
 			gicd_set_isenabler(gicd_base, sec_exc[index]);
 		}
 	} else {
@@ -185,7 +185,7 @@ void trigger_soft_intr(unsigned int id)
 				val & ~(0xff << ((id % 4) * 8)));
 	gicd_set_itargetsr(get_plat_config()->gicd_base,
 				id,
-				platform_get_core_pos(read_mpidr()));
+				plat_my_core_pos(read_mpidr()));
 	gicd_set_ispendr(get_plat_config()->gicd_base, id);
 }
 
@@ -266,7 +266,7 @@ void teei_gic_setup(void)
 		/* set this interrupt GIC_HIGHEST_SEC_PRIORITY */
 		gicd_set_ipriorityr(gicd_base, sec_exc[index], GIC_HIGHEST_SEC_PRIORITY);
 		gicd_set_itargetsr(gicd_base, sec_exc[index] /*set itarget to current cpu */,
-					platform_get_core_pos(read_mpidr()));
+					plat_my_core_pos(read_mpidr()));
 		/* set gic edge sensitive via GICD_ICFG */
 		mt_irq_set_sens(gicd_base, sec_exc[index], MT_EDGE_SENSITIVE);
 		/* set low polarity */
@@ -291,7 +291,7 @@ void teei_triggerSgiDump(void)
 
 	/* send to all cpus except the current one */
 	mpidr = read_mpidr();
-	linear_id = platform_get_core_pos(mpidr);
+	linear_id = plat_my_core_pos(mpidr);
 	fiq_smp_call_function(0xFF & ~(1 << linear_id), aee_wdt_dump, 0, 0);
 	aee_wdt_dump();
 }
@@ -323,7 +323,7 @@ uint64_t teei_fiq_handler(uint32_t id,
 				void *cookie)
 {
 	uint64_t mpidr = read_mpidr();
-	uint32_t linear_id = platform_get_core_pos(mpidr);
+	uint32_t linear_id = plat_my_core_pos(mpidr);
 	teei_context *teei_ctx = &secure_context[linear_id];
 	int caller_security_state = flags & 1;
 
