@@ -47,7 +47,8 @@
 #include "mt_cpuxgpt.h" // for atf_sched_clock_init(normal_base, atf_base);
 #include "emi_drv.h"
 #include <plat/common/common_def.h>
-#include <pl011.h>
+#include <drivers/ti/uart/uart_16550.h>
+#include <drivers/generic_delay_timer.h>
 /*******************************************************************************
  * Declarations of linker defined symbols which will help us find the layout
  * of trusted SRAM
@@ -82,9 +83,6 @@ extern unsigned long __COHERENT_RAM_END__;
 #define BL31_COHERENT_RAM_BASE (unsigned long)(&__COHERENT_RAM_START__)
 #define BL31_COHERENT_RAM_LIMIT (unsigned long)(&__COHERENT_RAM_END__)
 
-
-static entry_point_info_t bl32_image_ep_info;
-static entry_point_info_t bl33_image_ep_info;
 /*******************************************************************************
  * Reference to structure which holds the arguments that have been passed to
  * BL31 from BL2.
@@ -123,63 +121,6 @@ entry_point_info_t *bl31_plat_get_next_image_ep_info(uint32_t type)
 	else
 		return NULL;
 #endif
-}
-
-entry_point_info_t *bl31_plat_get_next_kernel64_ep_info(uint32_t type)
-{
-    entry_point_info_t *next_image_info;
-    unsigned long el_status;
-    unsigned int mode;
-
-    el_status = 0;
-    mode = 0;
-
-	assert(sec_state_is_valid(type));
-
-    next_image_info = (type == NON_SECURE) ?
-		&bl33_image_ep_info :
-		&bl32_image_ep_info;
-
-    /* Figure out what mode we enter the non-secure world in */
-	el_status = read_id_aa64pfr0_el1() >> ID_AA64PFR0_EL2_SHIFT;
-	el_status &= ID_AA64PFR0_ELX_MASK;
-
-	if (el_status){
-	    printf("Kernel_EL2\n");
-		mode = MODE_EL2;
-	} else{
-	    printf("Kernel_EL1\n");
-		mode = MODE_EL1;
-    }
-
-    printf("Kernel is 64Bit\n");
-    next_image_info->spsr = SPSR_64(mode, MODE_SP_ELX, DISABLE_ALL_EXCEPTIONS);
-    next_image_info->pc = get_kernel_info_pc();
-    next_image_info->args.arg0=get_kernel_info_r0();
-    next_image_info->args.arg1=get_kernel_info_r1();
-
-    printf("pc=0x%lx, r0=0x%lx, r1=0x%lx\n",
-           next_image_info->pc,
-           next_image_info->args.arg0,
-           next_image_info->args.arg1);
-
-
-    SET_SECURITY_STATE(next_image_info->h.attr, NON_SECURE);
-
-	/* None of the images on this platform can have 0x0 as the entrypoint */
-	if (next_image_info->pc)
-		return next_image_info;
-	else
-		return NULL;
-}
-
-entry_point_info_t *bl31_plat_get_next_kernel32_ep_info(uint32_t type)
-{
-        /* Compatible to already MP platform/project                  *
-         * only 64 bits will re-enter ATF in previsous ARMv8 platform *
-         * ignore k32_64 flag                                         *
-	 * call get_next_kernel32_ep_info, actually for 64 kernel     */
-	return bl31_plat_get_next_kernel64_ep_info(type);
 }
 
 /*******************************************************************************
@@ -231,7 +172,7 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 
 	/* Initialize the console to provide early debug support */
 //    console_init(UART2_BASE); // without boot argument
-    console_pl011_register(PL011_UART1_BASE, PL011_UART2_CLK_IN_HZ, PL011_BAUDRATE, &console);
+    console_16550_register(PL011_UART1_BASE, PL011_UART2_CLK_IN_HZ, PL011_BAUDRATE, &console);
 
     printf("atf_magic=0x%x\n\r", teearg->atf_magic);
     printf("tee_support=0x%x\n\r", teearg->tee_support);
@@ -322,31 +263,7 @@ void bl31_platform_setup(void)
 	gic_setup();
 	emimpu_setup();
 
-#if 0   //do not init CLCD in ATF
-	/*
-	 * TODO: Configure the CLCD before handing control to
-	 * linux. Need to see if a separate driver is needed
-	 * instead.
-	 */
-	mmio_write_32(VE_SYSREGS_BASE + V2M_SYS_CFGDATA, 0);
-	mmio_write_32(VE_SYSREGS_BASE + V2M_SYS_CFGCTRL,
-		      (1ull << 31) | (1 << 30) | (7 << 20) | (0 << 16));
-#endif
-
-#if 0   //FIXME TIMER CTRL skip now
-	/* Enable and initialize the System level generic timer */
-	mmio_write_32(SYS_CNTCTL_BASE + CNTCR_OFF, CNTCR_FCREQ(0) | CNTCR_EN);
-
-	/* Allow access to the System counter timer module */
-	reg_val = (1 << CNTACR_RPCT_SHIFT) | (1 << CNTACR_RVCT_SHIFT);
-	reg_val |= (1 << CNTACR_RFRQ_SHIFT) | (1 << CNTACR_RVOFF_SHIFT);
-	reg_val |= (1 << CNTACR_RWVT_SHIFT) | (1 << CNTACR_RWPT_SHIFT);
-	mmio_write_32(SYS_TIMCTL_BASE + CNTACR_BASE(0), reg_val);
-	mmio_write_32(SYS_TIMCTL_BASE + CNTACR_BASE(1), reg_val);
-
-	reg_val = (1 << CNTNSAR_NS_SHIFT(0)) | (1 << CNTNSAR_NS_SHIFT(1));
-	mmio_write_32(SYS_TIMCTL_BASE + CNTNSAR, reg_val);
-#endif
+	generic_delay_timer_init();
 	/* Intialize the power controller */
 	plat_pwrc_setup();
 

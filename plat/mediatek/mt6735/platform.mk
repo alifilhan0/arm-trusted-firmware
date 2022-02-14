@@ -128,6 +128,9 @@ BL31_SOURCES		+=	drivers/arm/cci/cci.c \
 				${MTK_PLAT}/common/mtk_plat_common.c		\
 				${MTK_PLAT}/common/mtk_sip_svc.c		\
 				${MTK_PLAT_SOC}/aarch64/platform_common.c \
+				drivers/delay_timer/delay_timer.c		\
+				drivers/delay_timer/generic_delay_timer.c	\
+				drivers/ti/uart/aarch64/16550_console.S		\
 				${MTK_PLAT_SOC}/bl31_plat_setup.c \
 				${MTK_PLAT_SOC}/plat_gic.c \
 				${MTK_PLAT_SOC}/plat_pm.c \
