@@ -33,6 +33,8 @@
 #include <assert.h>
 #include <bakery_lock.h>
 #include <cci.h>
+#include <rtc.h>
+#include <wdt.h>
 #include <debug.h>
 #include <mmio.h>
 #include <platform.h>
@@ -500,21 +502,24 @@ void plat_power_domain_suspend_finish(const psci_power_state_t *state)
  ******************************************************************************/
 static void __dead2 plat_system_off(void)
 {
-	/* Write the System Configuration Control Register */
-	mmio_write_32(V2M_SYSREGS_BASE + V2M_SYS_CFGCTRL,
-		V2M_CFGCTRL_START | V2M_CFGCTRL_RW | V2M_CFGCTRL_FUNC(FUNC_SHUTDOWN));
+	INFO("MTK System Off\n");
+
+	rtc_bbpu_power_down();
+
 	wfi();
-	ERROR("FVP System Off: operation not handled.\n");
+	ERROR("MTK System Off: operation not handled.\n");
 	panic();
 }
 
 static void __dead2 plat_system_reset(void)
 {
 	/* Write the System Configuration Control Register */
-	mmio_write_32(V2M_SYSREGS_BASE + V2M_SYS_CFGCTRL,
-		V2M_CFGCTRL_START | V2M_CFGCTRL_RW | V2M_CFGCTRL_FUNC(FUNC_REBOOT));
+	INFO("MTK System Reset\n");
+
+	wdt_trigger_reset();
+
 	wfi();
-	ERROR("FVP System Reset: operation not handled.\n");
+	ERROR("MTK System Reset: operation not handled.\n");
 	panic();
 }
 

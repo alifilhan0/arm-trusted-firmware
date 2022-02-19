@@ -34,45 +34,15 @@
 MTK_PLAT		:=	plat/mediatek
 MTK_PLAT_SOC		:=	${MTK_PLAT}/${PLAT}
 
-FVP_SHARED_DATA_LOCATION := tsram
-ifeq (${FVP_SHARED_DATA_LOCATION}, tsram)
-  FVP_SHARED_DATA_LOCATION_ID := FVP_IN_TRUSTED_SRAM
-else ifeq (${FVP_SHARED_DATA_LOCATION}, tdram)
-  FVP_SHARED_DATA_LOCATION_ID := FVP_IN_TRUSTED_DRAM
-else
-  $(error "Unsupported FVP_SHARED_DATA_LOCATION value")
-endif
-
-# On FVP, the TSP can execute either from Trusted SRAM or Trusted DRAM.
-# Trusted SRAM is the default.
-FVP_TSP_RAM_LOCATION := tsram
-ifeq (${FVP_TSP_RAM_LOCATION}, tsram)
-  FVP_TSP_RAM_LOCATION_ID := FVP_IN_TRUSTED_SRAM
-else ifeq (${FVP_TSP_RAM_LOCATION}, tdram)
-  FVP_TSP_RAM_LOCATION_ID := FVP_IN_TRUSTED_DRAM
-else
-  $(error "Unsupported FVP_TSP_RAM_LOCATION value")
-endif
-
-ifeq (${FVP_SHARED_DATA_LOCATION}, tsram)
-  ifeq (${FVP_TSP_RAM_LOCATION}, tdram)
-    $(error Shared data in Trusted SRAM and TSP in Trusted DRAM is not supported)
-  endif
-endif
-
-# Process flags
-$(eval $(call add_define,FVP_SHARED_DATA_LOCATION_ID))
-$(eval $(call add_define,FVP_TSP_RAM_LOCATION_ID))
-
 PLAT_INCLUDES := -I${MTK_PLAT_SOC}/include \
 				-I${MTK_PLAT_SOC}/ \
-				-I${MTK_PLAT_SOC}/drivers/log \
 				-I${MTK_PLAT_SOC}/drivers/timer \
 				-I${MTK_PLAT_SOC}/drivers/devapc \
 				-I${MTK_PLAT_SOC}/drivers/l2c \
 				-I${MTK_PLAT_SOC}/drivers/emi \
 				-I${MTK_PLAT_SOC}/drivers/pmic \
 				-I${MTK_PLAT_SOC}/drivers/rtc \
+				-I${MTK_PLAT_SOC}/drivers/wdt \
 				-Iinclude/common \
 				-Iinclude/drivers/io \
 				-Iinclude/plat/common \
@@ -98,18 +68,6 @@ PLAT_BL_COMMON_SOURCES := drivers/io/io_fip.c \
 				${MTK_PLAT_SOC}/plat_io_storage.c \
 				plat/common/aarch64/crash_console_helpers.S
 
-#BL1_SOURCES += drivers/arm/cci/cci.c \
-				lib/cpus/aarch64/aem_generic.S \
-				lib/cpus/aarch64/cortex_a53.S \
-				lib/cpus/aarch64/cortex_a57.S \
-				plat/common/aarch64/platform_up_stack.S \
-				${MTK_PLAT_SOC}/bl1_plat_setup.c \
-				${MTK_PLAT_SOC}/aarch64/plat_helpers.S
-
-#BL2_SOURCES += drivers/arm/tzc/tzc400.c \
-				plat/common/aarch64/platform_up_stack.S \
-				${MTK_PLAT_SOC}/bl2_plat_setup.c \
-				${MTK_PLAT_SOC}/plat_security.c
 
 BL31_SOURCES		+=	drivers/arm/cci/cci.c \
 				drivers/arm/gic/v2/gicv2_main.c \
@@ -146,18 +104,9 @@ BL31_SOURCES		+=	drivers/arm/cci/cci.c \
 				${MTK_PLAT_SOC}/drivers/emi/emi_mpu.c \
 				${MTK_PLAT_SOC}/drivers/sec/rng.c \
 				${MTK_PLAT_SOC}/drivers/rtc/rtc.c \
-				${MTK_PLAT_SOC}/drivers/log/log.c
+				${MTK_PLAT_SOC}/drivers/wdt/wdt.c \
 
-#BL31_SOURCES += ${MTK_PLAT_SOC}/sip_svc/sip_svc_common.c \
-				${MTK_PLAT_SOC}/sip_svc/sip_svc_setup.c \
-				${MTK_PLAT_SOC}/drivers/log/log.c
 
-ifeq (${SPD}, tbase)
-BL31_SOURCES += ${MTK_PLAT_SOC}/plat_tbase.c
-endif
-ifeq (${SPD}, teeid)
-BL31_SOURCES += ${MTK_PLAT_SOC}/plat_teei.c
-endif
 
 # Flag used by the MTK_platform port to determine the version of ARM GIC architecture
 # to use for interrupt management in EL3.

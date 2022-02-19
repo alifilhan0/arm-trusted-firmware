@@ -58,13 +58,6 @@ static entry_point_info_t bl32_ep_info;
 static entry_point_info_t bl33_ep_info;
 extern void bl31_on_entrypoint(void);
 /*
-extern unsigned long __RO_START__;
-extern unsigned long __RO_END__;
-
-extern unsigned long __COHERENT_RAM_START__;
-extern unsigned long __COHERENT_RAM_END__;
-*/
-/*
  * The next 2 constants identify the extents of the code & RO data region.
  * These addresses are used by the MMU setup code and therefore they must be
  * page-aligned.  It is the responsibility of the linker script to ensure that
@@ -87,7 +80,6 @@ extern unsigned long __COHERENT_RAM_END__;
  * Reference to structure which holds the arguments that have been passed to
  * BL31 from BL2.
  ******************************************************************************/
-//static bl31_params_t *bl2_to_bl31_params;
 
 unsigned int gis_abnormal_boot=NO_ABNORMAL_BOOT_TAG;
 
@@ -257,7 +249,6 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
  ******************************************************************************/
 void bl31_platform_setup(void)
 {
-//	unsigned int reg_val;
 
 	/* Initialize the gic cpu and distributor interfaces */
 	gic_setup();
@@ -267,8 +258,6 @@ void bl31_platform_setup(void)
 	/* Intialize the power controller */
 	plat_pwrc_setup();
 
-	/* Topologies are best known to the platform. */
-//	plat_setup_topology();
 }
 
 /*******************************************************************************
@@ -300,19 +289,19 @@ void bl31_plat_arch_setup(void)
     mmio_write_32(MP0_MISC_CONFIG3, mmio_read_32(MP0_MISC_CONFIG3) | 0x0000E000);
     printf("###@@@ MP0_MISC_CONFIG3:0x%08x @@@###\n", mmio_read_32(MP0_MISC_CONFIG3));
 
-    {
+
  //       teearg = (struct atf_arg_t *)(uintptr_t)TEE_BOOT_INFO_ADDR;
-        if(gteearg.atf_log_buf_size !=0 ) {
-            printf("mmap atf buffer : 0x%x, 0x%x\n\r", gteearg.atf_log_buf_start,
-                gteearg.atf_log_buf_size);
-            mmap_add_region((gteearg.atf_log_buf_start & ~(PAGE_SIZE_2MB_MASK)),
+    if(gteearg.atf_log_buf_size !=0 ) {
+         printf("mmap atf buffer : 0x%x, 0x%x\n\r", gteearg.atf_log_buf_start,
+	 gteearg.atf_log_buf_size);
+	 mmap_add_region((gteearg.atf_log_buf_start & ~(PAGE_SIZE_2MB_MASK)),
                             (gteearg.atf_log_buf_start & ~(PAGE_SIZE_2MB_MASK)),
                             PAGE_SIZE_2MB,
                             MT_DEVICE | MT_RW | MT_NS);
-            printf("mmap atf buffer (force 2MB aligned): 0x%x, 0x%x\n\r",
+	 printf("mmap atf buffer (force 2MB aligned): 0x%x, 0x%x\n\r",
                 (gteearg.atf_log_buf_start & ~(PAGE_SIZE_2MB_MASK)), PAGE_SIZE_2MB);
-        }
-    }
+     }
+
 
     // add TZRAM2_BASE to memory map
     mmap_add_region(TZRAM2_BASE & ~(PAGE_SIZE_2MB_MASK),
