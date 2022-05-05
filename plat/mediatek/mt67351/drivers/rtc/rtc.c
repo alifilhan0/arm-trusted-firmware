@@ -7,7 +7,7 @@
 #include <assert.h>
 #include <common/debug.h>
 
-#include <mt6735_def.h>
+#include <platform_def.h>
 #include <rtc.h>
 
 void rtc_bbpu_power_down(void)

@@ -21,7 +21,7 @@ const unsigned char mtk_power_domain_tree_desc[] = {
 };
 
 /*******************************************************************************
- * This function returns the MT6735 default topology tree information.
+ * This function returns the MT8173 default topology tree information.
  ******************************************************************************/
 const unsigned char *plat_get_power_domain_tree_desc(void)
 {

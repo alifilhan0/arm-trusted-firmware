@@ -1,13 +1,30 @@
-#include <arch.h>
-#include <platform_def.h>
-#include <mmio.h>
+/*
+ * Copyright (c) 2015, ARM Limited and Contributors. All rights reserved.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
 
-void disable_scu(unsigned long mpidr) {
-	uint32_t axi_config = (mpidr & MPIDR_CLUSTER_MASK) ? MP1_AXI_CONFIG : MP0_AXI_CONFIG;
-	mmio_write_32(axi_config, mmio_read_32(axi_config) | ACINACTM);
+#include <arch.h>
+#include <lib/mmio.h>
+
+#include <mcucfg.h>
+
+void disable_scu(unsigned long mpidr)
+{
+	if (mpidr & MPIDR_CLUSTER_MASK)
+		mmio_setbits_32((uintptr_t)&mt6735_mcucfg->mp1_miscdbg,
+			MP1_ACINACTM);
+	else
+		mmio_setbits_32((uintptr_t)&mt6735_mcucfg->mp0_axi_config,
+			MP0_ACINACTM);
 }
 
-void enable_scu(unsigned long mpidr) {
-	uint32_t axi_config = (mpidr & MPIDR_CLUSTER_MASK) ? MP1_AXI_CONFIG : MP0_AXI_CONFIG;
-	mmio_write_32(axi_config, mmio_read_32(axi_config) & ~ACINACTM);
+void enable_scu(unsigned long mpidr)
+{
+	if (mpidr & MPIDR_CLUSTER_MASK)
+		mmio_clrbits_32((uintptr_t)&mt6735_mcucfg->mp1_miscdbg,
+			MP1_ACINACTM);
+	else
+		mmio_clrbits_32((uintptr_t)&mt6735_mcucfg->mp0_axi_config,
+			MP0_ACINACTM);
 }

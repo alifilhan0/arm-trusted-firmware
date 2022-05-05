@@ -6,12 +6,12 @@
 
 #include <common/debug.h>
 #include <lib/mmio.h>
-#include <mt6735_def.h>
+#include <plat_def.h>
 #include <plat_sip_calls.h>
 #include <lib/psci/psci.h>
 #include <smccc_helpers.h>
-#include <wdt.h>
-
+#include "wdt.h"
+#define RGU_BASE                0x10007000
 #define WDT_BASE		(RGU_BASE + 0)
 #define WDT_MODE		(WDT_BASE + 0x00)
 #define WDT_LENGTH		(WDT_BASE + 0x04)
