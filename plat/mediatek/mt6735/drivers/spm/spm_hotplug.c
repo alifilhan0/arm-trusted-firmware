@@ -176,7 +176,7 @@ static const unsigned int hotplug_binary[] = {
 	0x17c07c1f, 0x1980001f, 0xdeaddead, 0x19c0001f, 0x01411820, 0xf0000000
 };
 static const struct pcm_desc hotplug_pcm = {
-	.version	= "pcm_power_down_mt6735_V37",
+	.version	= "pcm_power_down_mt8173_V37",
 	.base		= hotplug_binary,
 	.size		= 888,
 	.sess		= 2,

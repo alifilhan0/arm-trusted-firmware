@@ -8,6 +8,7 @@ MTK_PLAT		:=	plat/mediatek
 MTK_PLAT_SOC		:=	${MTK_PLAT}/${PLAT}
 
 PLAT_INCLUDES		:=	-I${MTK_PLAT}/common/				\
+				-I${MTK_PLAT_SOC}/drivers/gpio/			\
 				-Iinclude/plat/arm/common/aarch64		\
 				-I${MTK_PLAT_SOC}/drivers/crypt/		\
 				-I${MTK_PLAT_SOC}/drivers/mtcmos/		\
@@ -27,6 +28,7 @@ PLAT_BL_COMMON_SOURCES	:=	lib/xlat_tables/xlat_tables_common.c		\
 BL31_SOURCES		+=	common/desc_image_load.c			\
 				drivers/arm/cci/cci.c				\
 				drivers/arm/gic/common/gic_common.c		\
+				drivers/gpio/gpio.c                             \
 				drivers/arm/gic/v2/gicv2_main.c			\
 				drivers/arm/gic/v2/gicv2_helpers.c		\
 				drivers/delay_timer/delay_timer.c		\
@@ -48,6 +50,7 @@ BL31_SOURCES		+=	common/desc_image_load.c			\
 				${MTK_PLAT_SOC}/drivers/rtc/rtc.c		\
 				${MTK_PLAT_SOC}/drivers/spm/spm.c		\
 				${MTK_PLAT_SOC}/drivers/spm/spm_hotplug.c	\
+				${MTK_PLAT_SOC}/drivers/gpio/mtgpio.c           \
 				${MTK_PLAT_SOC}/drivers/spm/spm_mcdi.c		\
 				${MTK_PLAT_SOC}/drivers/spm/spm_suspend.c	\
 				${MTK_PLAT_SOC}/drivers/timer/mt_cpuxgpt.c	\

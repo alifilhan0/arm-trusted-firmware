@@ -257,20 +257,18 @@ static int plat_power_domain_on(unsigned long mpidr)
 {
 	int rc = PSCI_E_SUCCESS;
 	unsigned long cpu_id;
-	unsigned long cluster_id;
 	uintptr_t rv;
 
 	cpu_id = mpidr & MPIDR_CPU_MASK;
-	cluster_id = mpidr & MPIDR_CLUSTER_MASK;
 
-	if (cluster_id)
-		rv = (uintptr_t)&mt6735_mcucfg->mp1_rv_addr[cpu_id].rv_addr_lw;
-	else
-		rv = (uintptr_t)&mt6735_mcucfg->mp0_rv_addr[cpu_id].rv_addr_lw;
+	rv = (uintptr_t)&mt6735_mcucfg->mp0_misc_config[3];
+	mmio_write_32(rv, MP0_CPUCFG_64BIT);
 
+	/* FIXME: is it MBOX address (boot address)? */
+	rv = (uintptr_t)&mt6735_mcucfg->mp0_misc_config[(cpu_id + 1) * 2];
 	mmio_write_32(rv, secure_entrypoint);
-	INFO("mt_on[%ld:%ld], entry %x\n",
-		cluster_id, cpu_id, mmio_read_32(rv));
+
+	INFO("cpu_on[%ld], entry %x\n", cpu_id, mmio_read_32(rv));
 
 	spm_hotplug_on(mpidr);
 	return rc;

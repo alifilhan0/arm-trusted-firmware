@@ -11,20 +11,12 @@
 
 void disable_scu(unsigned long mpidr)
 {
-	if (mpidr & MPIDR_CLUSTER_MASK)
-		mmio_setbits_32((uintptr_t)&mt6735_mcucfg->mp1_miscdbg,
-			MP1_ACINACTM);
-	else
 		mmio_setbits_32((uintptr_t)&mt6735_mcucfg->mp0_axi_config,
 			MP0_ACINACTM);
 }
 
 void enable_scu(unsigned long mpidr)
 {
-	if (mpidr & MPIDR_CLUSTER_MASK)
-		mmio_clrbits_32((uintptr_t)&mt6735_mcucfg->mp1_miscdbg,
-			MP1_ACINACTM);
-	else
 		mmio_clrbits_32((uintptr_t)&mt6735_mcucfg->mp0_axi_config,
 			MP0_ACINACTM);
 }
