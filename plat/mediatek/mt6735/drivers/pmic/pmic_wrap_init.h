@@ -96,6 +96,22 @@ struct mt6735_pmic_wrap_regs {
 	uint32_t dvfs_wdata6;
 	uint32_t dvfs_adr7;
 	uint32_t dvfs_wdata7;
+	uint32_t dvfs_adr8;
+	uint32_t dvfs_wdata8;
+	uint32_t dvfs_adr9;
+	uint32_t dvfs_wdata9;
+	uint32_t dvfs_adr10;
+	uint32_t dvfs_wdata10;
+	uint32_t dvfs_adr11;
+	uint32_t dvfs_wdata11;
+	uint32_t dvfs_adr12;
+	uint32_t dvfs_wdata12;
+	uint32_t dvfs_adr13;
+	uint32_t dvfs_wdata13;
+	uint32_t dvfs_adr14;
+	uint32_t dvfs_wdata14;
+	uint32_t dvfs_adr15;
+	uint32_t dvfs_wdata15;
 	uint32_t spminf_sta;
 	uint32_t cipher_key_sel;
 	uint32_t cipher_iv_sel;
@@ -105,6 +121,12 @@ struct mt6735_pmic_wrap_regs {
 	uint32_t cipher_swrst;
 	uint32_t dcm_en;
 	uint32_t dcm_dbc_prd;
+	uint32_t ext_ck;
+	uint32_t adc_cmd_addr;
+	uint32_t pwrap_adc_cmd;
+	uint32_t adc_rdata_addr;
+	uint32_t gps_sta;
+	uint32_t swrst;
 };
 
 enum {
