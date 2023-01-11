@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2019, MediaTek Inc. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -8,7 +8,7 @@
 #include <lib/bakery_lock.h>
 #include <lib/mmio.h>
 
-#include <mt6735_def.h>
+#include <platform_def.h>
 #include <spm.h>
 #include <spm_suspend.h>
 
@@ -106,18 +106,19 @@ void spm_register_init(void)
 
 	mmio_write_32(SPM_PCM_CON0, CON0_CFG_KEY | CON0_IM_SLEEP_DVS);
 	mmio_write_32(SPM_PCM_CON1, CON1_CFG_KEY | CON1_EVENT_LOCK_EN |
-		CON1_SPM_SRAM_ISO_B | CON1_SPM_SRAM_SLP_B | CON1_MIF_APBEN);
+		      CON1_SPM_SRAM_ISO_B | CON1_SPM_SRAM_SLP_B |
+		      CON1_MIF_APBEN);
 	mmio_write_32(SPM_PCM_IM_PTR, 0);
 	mmio_write_32(SPM_PCM_IM_LEN, 0);
 
 	mmio_write_32(SPM_CLK_CON, CC_SYSCLK0_EN_1 | CC_SYSCLK0_EN_0 |
-		CC_SYSCLK1_EN_0 | CC_SRCLKENA_MASK_0 | CC_CLKSQ1_SEL |
-		CC_CXO32K_RM_EN_MD2 | CC_CXO32K_RM_EN_MD1 | CC_MD32_DCM_EN);
+		      CC_SYSCLK1_EN_0 | CC_SRCLKENA_MASK_0 | CC_CLKSQ1_SEL |
+		      CC_CXO32K_RM_EN_MD2 | CC_CXO32K_RM_EN_MD1 |
+		      CC_MD32_DCM_EN);
 
 	mmio_write_32(SPM_SLEEP_ISR_MASK, 0xff0c);
 	mmio_write_32(SPM_SLEEP_ISR_STATUS, 0xc);
 	mmio_write_32(SPM_PCM_SW_INT_CLEAR, 0xff);
-	mmio_write_32(SPM_MD32_SRAM_CON, 0xff0);
 }
 
 void spm_reset_and_init_pcm(void)
@@ -141,8 +142,8 @@ void spm_reset_and_init_pcm(void)
 	con1 = mmio_read_32(SPM_PCM_CON1) &
 		(CON1_PCM_WDT_WAKE_MODE | CON1_PCM_WDT_EN);
 	mmio_write_32(SPM_PCM_CON1, con1 | CON1_CFG_KEY | CON1_EVENT_LOCK_EN |
-		CON1_SPM_SRAM_ISO_B | CON1_SPM_SRAM_SLP_B |
-		CON1_IM_NONRP_EN | CON1_MIF_APBEN);
+		      CON1_SPM_SRAM_ISO_B | CON1_SPM_SRAM_SLP_B |
+		      CON1_IM_NONRP_EN | CON1_MIF_APBEN);
 }
 
 void spm_init_pcm_register(void)
@@ -169,12 +170,8 @@ void spm_set_power_control(const struct pwr_ctrl *pwrctrl)
 	mmio_write_32(SPM_PCM_PASR_DPD_2, 0);
 
 	mmio_clrsetbits_32(SPM_CLK_CON, CC_SRCLKENA_MASK_0,
-		(pwrctrl->srclkenai_mask ? CC_SRCLKENA_MASK_0 : 0));
+			   (pwrctrl->srclkenai_mask ? CC_SRCLKENA_MASK_0 : 0));
 
-	mmio_write_32(SPM_SLEEP_CA15_WFI0_EN, !!pwrctrl->ca15_wfi0_en);
-	mmio_write_32(SPM_SLEEP_CA15_WFI1_EN, !!pwrctrl->ca15_wfi1_en);
-	mmio_write_32(SPM_SLEEP_CA15_WFI2_EN, !!pwrctrl->ca15_wfi2_en);
-	mmio_write_32(SPM_SLEEP_CA15_WFI3_EN, !!pwrctrl->ca15_wfi3_en);
 	mmio_write_32(SPM_SLEEP_CA7_WFI0_EN, !!pwrctrl->ca7_wfi0_en);
 	mmio_write_32(SPM_SLEEP_CA7_WFI1_EN, !!pwrctrl->ca7_wfi1_en);
 	mmio_write_32(SPM_SLEEP_CA7_WFI2_EN, !!pwrctrl->ca7_wfi2_en);
@@ -280,7 +277,7 @@ void spm_kick_pcm_to_run(struct pwr_ctrl *pwrctrl)
 		mmio_write_32(SPM_PCM_TIMER_VAL, PCM_TIMER_MAX);
 
 	mmio_write_32(SPM_PCM_WDT_TIMER_VAL,
-		mmio_read_32(SPM_PCM_TIMER_VAL) + PCM_WDT_TIMEOUT);
+		      mmio_read_32(SPM_PCM_TIMER_VAL) + PCM_WDT_TIMEOUT);
 
 	mmio_write_32(SPM_PCM_CON1, con1 | CON1_CFG_KEY | CON1_PCM_WDT_EN);
 	mmio_write_32(SPM_PCM_PASR_DPD_0, 0);
@@ -292,11 +289,11 @@ void spm_kick_pcm_to_run(struct pwr_ctrl *pwrctrl)
 	mmio_write_32(SPM_PCM_FLAGS, pwrctrl->pcm_flags);
 
 	mmio_clrsetbits_32(SPM_CLK_CON, CC_LOCK_INFRA_DCM,
-		(pwrctrl->infra_dcm_lock ? CC_LOCK_INFRA_DCM : 0));
+			   (pwrctrl->infra_dcm_lock ? CC_LOCK_INFRA_DCM : 0));
 
 	mmio_write_32(SPM_PCM_PWR_IO_EN,
-		(pwrctrl->r0_ctrl_en ? PCM_PWRIO_EN_R0 : 0) |
-		(pwrctrl->r7_ctrl_en ? PCM_PWRIO_EN_R7 : 0));
+		      (pwrctrl->r0_ctrl_en ? PCM_PWRIO_EN_R0 : 0) |
+		      (pwrctrl->r7_ctrl_en ? PCM_PWRIO_EN_R7 : 0));
 }
 
 void spm_clean_after_wakeup(void)
@@ -355,6 +352,7 @@ enum wake_reason_t spm_output_wake_reason(struct wake_status *wakesta)
 	return wr;
 }
 
+#if 0
 void spm_boot_init(void)
 {
 	/* set spm transaction to secure mode */
@@ -368,3 +366,4 @@ void spm_boot_init(void)
 	spm_lock_init();
 	spm_register_init();
 }
+#endif

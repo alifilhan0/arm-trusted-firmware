@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2019, MediaTek Inc. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -9,7 +9,7 @@
 #include <lib/bakery_lock.h>
 #include <lib/mmio.h>
 
-#include <mt6735_def.h>
+#include <platform_def.h>
 #include <spm.h>
 #include <spm_suspend.h>
 
@@ -29,14 +29,7 @@
 #define spm_is_wakesrc_invalid(wakesrc)	\
 	(!!((unsigned int)(wakesrc) & 0xc0003803))
 
-#define ARMCA15PLL_CON0		(APMIXED_BASE + 0x200)
-#define ARMCA15PLL_CON1		(APMIXED_BASE + 0x204)
-#define ARMCA15PLL_PWR_CON0	(APMIXED_BASE + 0x20c)
-#define ARMCA15PLL_PWR_ON	(1U << 0)
-#define ARMCA15PLL_ISO_EN	(1U << 1)
-#define ARMCA15PLL_EN		(1U << 0)
-
-const unsigned int spm_flags =
+const unsigned int gb_spm_flags =
 	SPM_DUALVCORE_PDN_DIS | SPM_PASR_DIS | SPM_DPD_DIS |
 	SPM_CPU_DVS_DIS | SPM_OPT | SPM_INFRA_PDN_DIS;
 
@@ -205,7 +198,6 @@ static const struct pcm_desc suspend_pcm_ca7 = {
 	.vec3 = EVENT_VEC(31, 1, 0, 277),
 };
 
-
 /*
  * SPM settings for suspend scenario
  */
@@ -237,13 +229,13 @@ static struct pwr_ctrl spm_ctrl = {
 /*
  * go_to_sleep_before_wfi() - trigger SPM to enter suspend scenario
  */
-static void go_to_sleep_before_wfi(const unsigned int flags_spm)
+static void go_to_sleep_before_wfi(const unsigned int spm_flags)
 {
 	struct pwr_ctrl *pwrctrl;
 
 	pwrctrl = &spm_ctrl;
 
-	set_pwrctrl_pcm_flags(pwrctrl, flags_spm);
+	set_pwrctrl_pcm_flags(pwrctrl, spm_flags);
 
 	spm_set_sysclk_settle();
 
@@ -277,25 +269,10 @@ static enum wake_reason_t go_to_sleep_after_wfi(void)
 	return last_wr;
 }
 
-static void bigcore_pll_on(void)
-{
-	mmio_setbits_32(ARMCA15PLL_PWR_CON0, ARMCA15PLL_PWR_ON);
-	mmio_clrbits_32(ARMCA15PLL_PWR_CON0, ARMCA15PLL_ISO_EN);
-	mmio_setbits_32(ARMCA15PLL_CON0, ARMCA15PLL_EN);
-}
-
-static void bigcore_pll_off(void)
-{
-	mmio_clrbits_32(ARMCA15PLL_CON0, ARMCA15PLL_EN);
-	mmio_setbits_32(ARMCA15PLL_PWR_CON0, ARMCA15PLL_ISO_EN);
-	mmio_clrbits_32(ARMCA15PLL_PWR_CON0, ARMCA15PLL_PWR_ON);
-}
-
 void spm_system_suspend(void)
 {
-	bigcore_pll_off();
 	spm_lock_get();
-	go_to_sleep_before_wfi(spm_flags);
+	go_to_sleep_before_wfi(gb_spm_flags);
 	set_suspend_ready();
 	spm_lock_release();
 }
@@ -307,7 +284,4 @@ void spm_system_suspend_finish(void)
 	INFO("spm_wake_reason=%d\n", spm_wake_reason);
 	clear_all_ready();
 	spm_lock_release();
-	bigcore_pll_on();
-	/* Add 20us delay for turning on PLL*/
-	udelay(20);
 }

@@ -17,37 +17,84 @@ struct mt6735_mcucfg_regs {
 	uint32_t mp0_cpu2_mem_delsel;	/* 0xc */
 	uint32_t mp0_cpu3_mem_delsel;	/* 0x10 */
 	uint32_t mp0_cache_mem_delsel;	/* 0x14 */
-	uint32_t reserved1[5];		/* 0x18-0x28 */
+	uint32_t reserved1[5];		/* 0x18-0x24 */
 	uint32_t mp0_axi_config;	/* 0x2c */
 	uint32_t mp0_misc_config[10];	/* 0x30-0x54 */
-	uint32_t mp0_ca7l_cfg_dis;	/* 0x58 */
-	uint32_t mp0_ca7l_clken_ctrl;	/* 0x5c */
-	uint32_t mp0_ca7l_rst_ctrl;	/* 0x60 */
-	uint32_t mp0_ca7l_misc_config;	/* 0x64 */
-	uint32_t aclken_div;		/* 0x68 */
-	uint32_t pclken_div;		/* 0x6c */
-	uint32_t mp0_mem_pwr_ctrl;	/* 0x70 */
-	uint32_t mp0_armpll_div_ctrl;	/* 0x74 */
-	uint32_t mp0_rst_status;	/* 0x78 */
-	uint32_t mp0_dbg_ctrl;		/* 0x7c */
-	uint32_t mp0_dbg_flag;		/* 0x80 */
-	uint32_t dbg_pwr_ctrl;		/* 0x84 */
-	uint32_t mp0_rw_rsvd0;		/* 0x88 */
-	uint32_t mp0_rw_rsvd1;		/* 0x8c */
-	uint32_t mp0_ro_rsvd;		/* 0x90 */
-	uint32_t reserved2[3];		/* 0x94-0x9c */
-	uint32_t int_pol_ctl[8];	/* 0x100-0x11c */
-	uint32_t reserved[32];		/* 0x120-0x19c */
-	uint32_t ap_bank4_map[2];	/* 0x200-0x204 */
-	uint32_t bus_sync_sel;		/* 0x208 */
-	uint32_t mp0_ca7l_ir_mon;	/* 0x20c */
-	uint32_t reserved3[92];		/* 0x210-0x39c */
-	uint32_t dfd_ctrl;		/* 0x400 */
-	uint32_t dfd_cnt_l;		/* 0x404 */
-	uint32_t dfd_cnt_h;		/* 0x408 */
-	uint32_t reserved4[108];	/* 0x40c-0x66c */
-	uint32_t xgpt_ctl;		/* 0x670 */
-	uint32_t xgpt_idx;		/* 0x674 */
+    uint32_t mp0_ca7l_cfg_dis;
+    uint32_t mp0_ca7l_clken_ctrl;
+    uint32_t mp0_ca7l_rst_ctrl;
+    uint32_t mp0_ca7l_misc_config;
+    uint32_t mp0_ca7l_dbg_pwr_ctrl;
+    uint32_t mp0_rw_rsvd0;
+    uint32_t mp0_rw_rsvd1;
+    uint32_t mp0_ro_rsvd;
+    uint32_t reserved0_0[100];
+    uint32_t mp1_cpucfg;
+    uint32_t mp1_miscdbg;
+    uint32_t reserved0_1[13];
+    uint32_t mp1_rst_ctl;
+    uint32_t mp1_clkenm_div;
+    uint32_t reserved0_2[7];
+    uint32_t mp1_config_res;
+    uint32_t reserved0_3[13];
+    struct {
+        uint32_t rv_addr_lw;
+        uint32_t rv_addr_hw;
+    } mp1_rv_addr[2];
+    uint32_t reserved0_4[84];
+    uint32_t mp0_rst_status;        /* 0x400 */
+    uint32_t mp0_dbg_ctrl;
+    uint32_t mp0_dbg_flag;
+    uint32_t mp0_ca7l_ir_mon;
+    struct {
+        uint32_t pc_lw;
+        uint32_t pc_hw;
+        uint32_t fp_arch32;
+        uint32_t sp_arch32;
+        uint32_t fp_arch64_lw;
+        uint32_t fp_arch64_hw;
+        uint32_t sp_arch64_lw;
+        uint32_t sp_arch64_hw;
+    } mp0_dbg_core[4];
+    uint32_t dfd_ctrl;
+    uint32_t dfd_cnt_l;
+    uint32_t dfd_cnt_h;
+    uint32_t misccfg_mp0_rw_rsvd;
+    uint32_t misccfg_sec_vio_status0;
+    uint32_t misccfg_sec_vio_status1;
+    uint32_t reserved1[22];
+    uint32_t misccfg_rw_rsvd;        /* 0x500 */
+    uint32_t mcusys_dbg_mon_sel_a;
+    uint32_t mcusys_dbg_mon;
+    uint32_t reserved2[61];
+    uint32_t mcusys_config_a;        /* 0x600 */
+    uint32_t mcusys_config1_a;
+    uint32_t mcusys_gic_peribase_a;
+    uint32_t reserved3;
+    uint32_t sec_range0_start;        /* 0x610 */
+    uint32_t sec_range0_end;
+    uint32_t sec_range_enable;
+    uint32_t reserved4;
+    uint32_t int_pol_ctl[8];        /* 0x620 */
+    uint32_t aclken_div;            /* 0x640 */
+    uint32_t pclken_div;
+    uint32_t l2c_sram_ctrl;
+    uint32_t armpll_jit_ctrl;
+    uint32_t cci_addrmap;            /* 0x650 */
+    uint32_t cci_config;
+    uint32_t cci_periphbase;
+    uint32_t cci_nevntcntovfl;
+    uint32_t cci_clk_ctrl;            /* 0x660 */
+    uint32_t cci_acel_s1_ctrl;
+    uint32_t bus_fabric_dcm_ctrl;
+    uint32_t reserved5;
+    uint32_t xgpt_ctl;            /* 0x670 */
+    uint32_t xgpt_idx;
+    uint32_t ptpod2_ctl0;
+    uint32_t ptpod2_ctl1;
+    uint32_t mcusys_revid;
+    uint32_t mcusys_rw_rsvd0;
+    uint32_t mcusys_rw_rsvd1;
 };
 
 static struct mt6735_mcucfg_regs *const mt6735_mcucfg = (void *)MCUCFG_BASE;

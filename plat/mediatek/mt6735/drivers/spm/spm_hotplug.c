@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2015, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2019, MediaTek Inc. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include <arch.h>
 #include <lib/mmio.h>
-#include <mt6735_def.h>
+#include <platform_def.h>
 #include <plat/common/platform.h>
 
 #include <spm.h>
@@ -175,6 +175,7 @@ static const unsigned int hotplug_binary[] = {
 	0xd00041e0, 0x17c07c1f, 0x1910001f, 0x10006358, 0x810b1001, 0xd8006dc4,
 	0x17c07c1f, 0x1980001f, 0xdeaddead, 0x19c0001f, 0x01411820, 0xf0000000
 };
+
 static const struct pcm_desc hotplug_pcm = {
 	.version	= "pcm_power_down_mt8173_V37",
 	.base		= hotplug_binary,
@@ -218,8 +219,8 @@ void spm_go_to_hotplug(void)
 void spm_clear_hotplug(void)
 {
 	/* Inform SPM that CPU wants to program CPU_WAKEUP_EVENT and
-	 * DISABLE_CPU_DROM */
-
+	 * DISABLE_CPU_DROM
+	 */
 	mmio_write_32(SPM_PCM_REG_DATA_INI, PCM_HANDSHAKE_SEND1);
 	mmio_write_32(SPM_PCM_PWR_IO_EN, PCM_RF_SYNC_R6);
 	mmio_write_32(SPM_PCM_PWR_IO_EN, 0);
@@ -238,7 +239,7 @@ void spm_hotplug_on(unsigned long mpidr)
 	unsigned long linear_id;
 
 	linear_id = ((mpidr & MPIDR_CLUSTER_MASK) >> 6) |
-			(mpidr & MPIDR_CPU_MASK);
+		     (mpidr & MPIDR_CPU_MASK);
 
 	spm_lock_get();
 	if (is_hotplug_ready() == 0) {
@@ -249,8 +250,8 @@ void spm_hotplug_on(unsigned long mpidr)
 	}
 	/* turn on CPUx */
 	mmio_clrsetbits_32(SPM_PCM_RESERVE,
-		PCM_HOTPLUG_VALID_MASK | (1 << linear_id),
-		1 << (linear_id + PCM_HOTPLUG_VALID_SHIFT));
+			   PCM_HOTPLUG_VALID_MASK | (1 << linear_id),
+			   1 << (linear_id + PCM_HOTPLUG_VALID_SHIFT));
 	spm_lock_release();
 }
 
@@ -259,7 +260,7 @@ void spm_hotplug_off(unsigned long mpidr)
 	unsigned long linear_id;
 
 	linear_id = ((mpidr & MPIDR_CLUSTER_MASK) >> 6) |
-			(mpidr & MPIDR_CPU_MASK);
+		     (mpidr & MPIDR_CPU_MASK);
 
 	spm_lock_get();
 	if (is_hotplug_ready() == 0) {
@@ -269,7 +270,7 @@ void spm_hotplug_off(unsigned long mpidr)
 		set_hotplug_ready();
 	}
 	mmio_clrsetbits_32(SPM_PCM_RESERVE, PCM_HOTPLUG_VALID_MASK,
-		(1 << linear_id) |
-		(1 << (linear_id + PCM_HOTPLUG_VALID_SHIFT)));
+			   (1 << linear_id) |
+			   (1 << (linear_id + PCM_HOTPLUG_VALID_SHIFT)));
 	spm_lock_release();
 }

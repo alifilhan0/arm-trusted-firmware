@@ -1,17 +1,15 @@
 /*
- * Copyright (c) 2015, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2019, MediaTek Inc. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <platform_def.h>
-
 #include <arch.h>
 #include <common/debug.h>
 #include <lib/mmio.h>
+#include <platform_def.h>
 #include <plat/common/platform.h>
 
-#include <mt6735_def.h>
 #include <spm.h>
 #include <spm_hotplug.h>
 #include <spm_mcdi.h>
@@ -27,12 +25,12 @@
 	 WAKE_SRC_MD32 | WAKE_SRC_USB_CD | WAKE_SRC_USB_PDN |	\
 	 WAKE_SRC_AFE | WAKE_SRC_THERM | WAKE_SRC_CIRQ |	\
 	 WAKE_SRC_SYSPWREQ | WAKE_SRC_CPU_IRQ)
-#define PCM_MCDI_HANDSHAKE_SYNC	0xbeefbeef
-#define PCM_MCDI_HANDSHAKE_ACK	0xdeaddead
-#define PCM_MCDI_UPDATE_INFORM	0xabcdabcd
-#define PCM_MCDI_CKECK_DONE	0x12345678
-#define PCM_MCDI_ALL_CORE_AWAKE	0x0
-#define PCM_MCDI_OFFLOADED	0xaa55aa55
+#define PCM_MCDI_HANDSHAKE_SYNC		0xbeefbeef
+#define PCM_MCDI_HANDSHAKE_ACK		0xdeaddead
+#define PCM_MCDI_UPDATE_INFORM		0xabcdabcd
+#define PCM_MCDI_CKECK_DONE		0x12345678
+#define PCM_MCDI_ALL_CORE_AWAKE		0x0
+#define PCM_MCDI_OFFLOADED		0xaa55aa55
 #define PCM_MCDI_CA72_CPUTOP_PWRCTL	(0x1 << 16)
 #define PCM_MCDI_CA53_CPUTOP_PWRCTL	(0x1 << 17)
 #define PCM_MCDI_CA72_PWRSTA_SHIFT	16
@@ -209,7 +207,7 @@ static const unsigned int mcdi_binary[] = {
 };
 
 static const struct pcm_desc mcdi_pcm = {
-	.version = "pcm_mcdi_mt6735_20160401_v1",
+	.version = "pcm_mcdi_mt8173_20160401_v1",
 	.base = mcdi_binary,
 	.size = 1001,
 	.sess = 2,
@@ -235,16 +233,17 @@ static const struct spm_lp_scen spm_mcdi = {
 
 void spm_mcdi_cpu_wake_up_event(int wake_up_event, int disable_dormant_power)
 {
-	if (((mmio_read_32(SPM_SLEEP_CPU_WAKEUP_EVENT) & 0x1) == 1)
-	    && ((mmio_read_32(SPM_CLK_CON) & CC_DISABLE_DORM_PWR) == 0)) {
+	if (((mmio_read_32(SPM_SLEEP_CPU_WAKEUP_EVENT) & 0x1) == 1) &&
+	    ((mmio_read_32(SPM_CLK_CON) & CC_DISABLE_DORM_PWR) == 0)) {
 		/* MCDI is offload? */
 		INFO("%s: SPM_SLEEP_CPU_WAKEUP_EVENT:%x, SPM_CLK_CON %x",
-			__func__, mmio_read_32(SPM_SLEEP_CPU_WAKEUP_EVENT),
-			mmio_read_32(SPM_CLK_CON));
+		     __func__, mmio_read_32(SPM_SLEEP_CPU_WAKEUP_EVENT),
+		     mmio_read_32(SPM_CLK_CON));
 		return;
 	}
 	/* Inform SPM that CPU wants to program CPU_WAKEUP_EVENT and
-	 * DISABLE_CPU_DROM */
+	 * DISABLE_CPU_DROM
+	 */
 	mmio_write_32(SPM_PCM_REG_DATA_INI, PCM_MCDI_HANDSHAKE_SYNC);
 	mmio_write_32(SPM_PCM_PWR_IO_EN, PCM_RF_SYNC_R6);
 	mmio_write_32(SPM_PCM_PWR_IO_EN, 0);
@@ -256,13 +255,13 @@ void spm_mcdi_cpu_wake_up_event(int wake_up_event, int disable_dormant_power)
 	if (disable_dormant_power) {
 		mmio_setbits_32(SPM_CLK_CON, CC_DISABLE_DORM_PWR);
 		while (mmio_read_32(SPM_CLK_CON) !=
-			(mmio_read_32(SPM_CLK_CON) | CC_DISABLE_DORM_PWR))
+		       (mmio_read_32(SPM_CLK_CON) | CC_DISABLE_DORM_PWR))
 			;
 
 	} else {
 		mmio_clrbits_32(SPM_CLK_CON, CC_DISABLE_DORM_PWR);
 		while (mmio_read_32(SPM_CLK_CON) !=
-			(mmio_read_32(SPM_CLK_CON) & ~CC_DISABLE_DORM_PWR))
+		       (mmio_read_32(SPM_CLK_CON) & ~CC_DISABLE_DORM_PWR))
 			;
 	}
 
@@ -304,147 +303,80 @@ void spm_mcdi_wakeup_all_cores(void)
 static void spm_mcdi_wfi_sel_enter(unsigned long mpidr)
 {
 	int core_id_val = mpidr & MPIDR_CPU_MASK;
-	int cluster_id = (mpidr & MPIDR_CLUSTER_MASK) >> MPIDR_AFFINITY_BITS;
 
 	/* SPM WFI Select by core number */
-	if (cluster_id) {
-		switch (core_id_val) {
-		case 0:
-			mmio_write_32(SPM_CA15_CPU0_IRQ_MASK, 1);
-			mmio_write_32(SPM_SLEEP_CA15_WFI0_EN, 1);
-			break;
-		case 1:
-			mmio_write_32(SPM_CA15_CPU1_IRQ_MASK, 1);
-			mmio_write_32(SPM_SLEEP_CA15_WFI1_EN, 1);
-			break;
-		case 2:
-			mmio_write_32(SPM_CA15_CPU2_IRQ_MASK, 1);
-			mmio_write_32(SPM_SLEEP_CA15_WFI2_EN, 1);
-			break;
-		case 3:
-			mmio_write_32(SPM_CA15_CPU3_IRQ_MASK, 1);
-			mmio_write_32(SPM_SLEEP_CA15_WFI3_EN, 1);
-			break;
-		default:
-			break;
-		}
-	} else {
-		switch (core_id_val) {
-		case 0:
-			mmio_write_32(SPM_CA7_CPU0_IRQ_MASK, 1);
-			mmio_write_32(SPM_SLEEP_CA7_WFI0_EN, 1);
-			break;
-		case 1:
-			mmio_write_32(SPM_CA7_CPU1_IRQ_MASK, 1);
-			mmio_write_32(SPM_SLEEP_CA7_WFI1_EN, 1);
-			break;
-		case 2:
-			mmio_write_32(SPM_CA7_CPU2_IRQ_MASK, 1);
-			mmio_write_32(SPM_SLEEP_CA7_WFI2_EN, 1);
-			break;
-		case 3:
-			mmio_write_32(SPM_CA7_CPU3_IRQ_MASK, 1);
-			mmio_write_32(SPM_SLEEP_CA7_WFI3_EN, 1);
-			break;
-		default:
-			break;
-		}
+	switch (core_id_val) {
+	case 0:
+		mmio_write_32(SPM_CA7_CPU0_IRQ_MASK, 1);
+		mmio_write_32(SPM_SLEEP_CA7_WFI0_EN, 1);
+		break;
+	case 1:
+		mmio_write_32(SPM_CA7_CPU1_IRQ_MASK, 1);
+		mmio_write_32(SPM_SLEEP_CA7_WFI1_EN, 1);
+		break;
+	case 2:
+		mmio_write_32(SPM_CA7_CPU2_IRQ_MASK, 1);
+		mmio_write_32(SPM_SLEEP_CA7_WFI2_EN, 1);
+		break;
+	case 3:
+		mmio_write_32(SPM_CA7_CPU3_IRQ_MASK, 1);
+		mmio_write_32(SPM_SLEEP_CA7_WFI3_EN, 1);
+		break;
+	default:
+		break;
 	}
 }
 
 static void spm_mcdi_wfi_sel_leave(unsigned long mpidr)
 {
 	int core_id_val = mpidr & MPIDR_CPU_MASK;
-	int cluster_id = (mpidr & MPIDR_CLUSTER_MASK) >> MPIDR_AFFINITY_BITS;
 
 	/* SPM WFI Select by core number */
-	if (cluster_id) {
-		switch (core_id_val) {
-		case 0:
-			mmio_write_32(SPM_SLEEP_CA15_WFI0_EN, 0);
-			mmio_write_32(SPM_CA15_CPU0_IRQ_MASK, 0);
-			break;
-		case 1:
-			mmio_write_32(SPM_SLEEP_CA15_WFI1_EN, 0);
-			mmio_write_32(SPM_CA15_CPU1_IRQ_MASK, 0);
-			break;
-		case 2:
-			mmio_write_32(SPM_SLEEP_CA15_WFI2_EN, 0);
-			mmio_write_32(SPM_CA15_CPU2_IRQ_MASK, 0);
-			break;
-		case 3:
-			mmio_write_32(SPM_SLEEP_CA15_WFI3_EN, 0);
-			mmio_write_32(SPM_CA15_CPU3_IRQ_MASK, 0);
-			break;
-		default:
-			break;
-		}
-	} else {
-		switch (core_id_val) {
-		case 0:
-			mmio_write_32(SPM_SLEEP_CA7_WFI0_EN, 0);
-			mmio_write_32(SPM_CA7_CPU0_IRQ_MASK, 0);
-			break;
-		case 1:
-			mmio_write_32(SPM_SLEEP_CA7_WFI1_EN, 0);
-			mmio_write_32(SPM_CA7_CPU1_IRQ_MASK, 0);
-			break;
-		case 2:
-			mmio_write_32(SPM_SLEEP_CA7_WFI2_EN, 0);
-			mmio_write_32(SPM_CA7_CPU2_IRQ_MASK, 0);
-			break;
-		case 3:
-			mmio_write_32(SPM_SLEEP_CA7_WFI3_EN, 0);
-			mmio_write_32(SPM_CA7_CPU3_IRQ_MASK, 0);
-			break;
-		default:
-			break;
-		}
+	switch (core_id_val) {
+	case 0:
+		mmio_write_32(SPM_SLEEP_CA7_WFI0_EN, 0);
+		mmio_write_32(SPM_CA7_CPU0_IRQ_MASK, 0);
+		break;
+	case 1:
+		mmio_write_32(SPM_SLEEP_CA7_WFI1_EN, 0);
+		mmio_write_32(SPM_CA7_CPU1_IRQ_MASK, 0);
+		break;
+	case 2:
+		mmio_write_32(SPM_SLEEP_CA7_WFI2_EN, 0);
+		mmio_write_32(SPM_CA7_CPU2_IRQ_MASK, 0);
+		break;
+	case 3:
+		mmio_write_32(SPM_SLEEP_CA7_WFI3_EN, 0);
+		mmio_write_32(SPM_CA7_CPU3_IRQ_MASK, 0);
+		break;
+	default:
+		break;
 	}
 }
 
 static void spm_mcdi_set_cputop_pwrctrl_for_cluster_off(unsigned long mpidr)
 {
-	unsigned long cluster_id = mpidr & MPIDR_CLUSTER_MASK;
 	unsigned long cpu_id = mpidr & MPIDR_CPU_MASK;
 	unsigned int pwr_status, shift, i, flag = 0;
 
 	pwr_status = mmio_read_32(SPM_PWR_STATUS) |
-				 mmio_read_32(SPM_PWR_STATUS_2ND);
+				  mmio_read_32(SPM_PWR_STATUS_2ND);
 
-	if (cluster_id) {
-		for (i = 0; i < PLATFORM_CLUSTER1_CORE_COUNT; i++) {
-			if (i == cpu_id)
-				continue;
-			shift = i + PCM_MCDI_CA72_PWRSTA_SHIFT;
-			flag |= (pwr_status & (1 << shift)) >> shift;
-		}
-		if (!flag)
-			mmio_setbits_32(SPM_PCM_RESERVE,
-					PCM_MCDI_CA72_CPUTOP_PWRCTL);
-	} else {
-		for (i = 0; i < PLATFORM_CLUSTER0_CORE_COUNT; i++) {
-			if (i == cpu_id)
-				continue;
-			shift = i + PCM_MCDI_CA53_PWRSTA_SHIFT;
-			flag |= (pwr_status & (1 << shift)) >> shift;
-		}
-		if (!flag)
-			mmio_setbits_32(SPM_PCM_RESERVE,
-					PCM_MCDI_CA53_CPUTOP_PWRCTL);
+	for (i = 0; i < PLATFORM_CLUSTER0_CORE_COUNT; i++) {
+		if (i == cpu_id)
+			continue;
+		shift = i + PCM_MCDI_CA53_PWRSTA_SHIFT;
+		flag |= (pwr_status & (1 << shift)) >> shift;
 	}
+
+	if (!flag)
+		mmio_setbits_32(SPM_PCM_RESERVE,
+				PCM_MCDI_CA53_CPUTOP_PWRCTL);
 }
 
 static void spm_mcdi_clear_cputop_pwrctrl_for_cluster_on(unsigned long mpidr)
 {
-	unsigned long cluster_id = mpidr & MPIDR_CLUSTER_MASK;
-
-	if (cluster_id)
-		mmio_clrbits_32(SPM_PCM_RESERVE,
-				PCM_MCDI_CA72_CPUTOP_PWRCTL);
-	else
-		mmio_clrbits_32(SPM_PCM_RESERVE,
-				PCM_MCDI_CA53_CPUTOP_PWRCTL);
+	mmio_clrbits_32(SPM_PCM_RESERVE, PCM_MCDI_CA53_CPUTOP_PWRCTL);
 }
 
 void spm_mcdi_prepare_for_mtcmos(void)
@@ -493,7 +425,7 @@ void spm_mcdi_finish_for_on_state(unsigned long mpidr, unsigned int afflvl)
 	unsigned long linear_id;
 
 	linear_id = ((mpidr & MPIDR_CLUSTER_MASK) >> 6) |
-			(mpidr & MPIDR_CPU_MASK);
+		     (mpidr & MPIDR_CPU_MASK);
 
 	spm_lock_get();
 	spm_mcdi_clear_cputop_pwrctrl_for_cluster_on(mpidr);
