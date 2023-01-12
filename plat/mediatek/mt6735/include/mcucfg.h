@@ -17,7 +17,7 @@ struct mt6735_mcucfg_regs {
 	uint32_t mp0_cpu2_mem_delsel;	/* 0xc */
 	uint32_t mp0_cpu3_mem_delsel;	/* 0x10 */
 	uint32_t mp0_cache_mem_delsel;	/* 0x14 */
-	uint32_t reserved0[5];		/* 0x18-0x24 */
+	uint32_t reserved0[5];		/* 0x18-0x28 */
 	uint32_t mp0_axi_config;	/* 0x2c */
 	uint32_t mp0_misc_config[10];	/* 0x30-0x54 */
     uint32_t mp0_ca7l_cfg_dis;

@@ -45,6 +45,7 @@ BL31_SOURCES		+=	common/desc_image_load.c			\
 				${MTK_PLAT_SOC}/aarch64/platform_common.c	\
 				${MTK_PLAT_SOC}/bl31_plat_setup.c		\
 				${MTK_PLAT_SOC}/drivers/crypt/crypt.c		\
+				${MTK_PLAT_SOC}/drivers/l2c/l2c.c		\
 				${MTK_PLAT_SOC}/drivers/spm/mtcmos.c		\
 				${MTK_PLAT_SOC}/drivers/rtc/rtc.c		\
 				${MTK_PLAT_SOC}/drivers/spm/spm.c		\

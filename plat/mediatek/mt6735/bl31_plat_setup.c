@@ -72,7 +72,8 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 				u_register_t arg2, u_register_t arg3)
 {
 	static console_t console;
-
+    
+    config_l2_size();
 	console_16550_register(MT6735_UART0_BASE, MT6735_UART_CLOCK, MT6735_BAUDRATE, &console);
 
 	VERBOSE("bl31_setup\n");

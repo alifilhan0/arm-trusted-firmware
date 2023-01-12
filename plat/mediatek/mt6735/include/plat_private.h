@@ -23,5 +23,5 @@ void plat_cci_disable(void);
 
 /* Declarations for plat_topology.c */
 int mt_setup_topology(void);
-
+void config_l2_size(void);
 #endif /* PLAT_PRIVATE_H */
