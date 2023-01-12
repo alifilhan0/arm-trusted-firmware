@@ -352,7 +352,6 @@ enum wake_reason_t spm_output_wake_reason(struct wake_status *wakesta)
 	return wr;
 }
 
-#if 0
 void spm_boot_init(void)
 {
 	/* set spm transaction to secure mode */
@@ -366,4 +365,3 @@ void spm_boot_init(void)
 	spm_lock_init();
 	spm_register_init();
 }
-#endif

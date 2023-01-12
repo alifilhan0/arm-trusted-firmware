@@ -11,14 +11,6 @@
 #include <platform_def.h>
 #include <spm.h>
 
-#define SPM_EN			(0xb16 << 16 | 0x1)
-#define SPM_VDE_PWR_CON		0x0210
-#define SPM_MFG_PWR_CON		0x0214
-#define SPM_VEN_PWR_CON			0x0230
-#define SPM_ISP_PWR_CON		0x0238
-#define SPM_DIS_PWR_CON		0x023c
-#define SPM_CONN_PWR_CON	0x0280
-
 #define SRAM_ISOINT_B           BIT(6)
 #define SRAM_CKISO              BIT(5)
 #define L1_PDN			BIT(0)

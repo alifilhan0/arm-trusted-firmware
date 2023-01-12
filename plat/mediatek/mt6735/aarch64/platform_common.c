@@ -17,7 +17,6 @@
 
 static const int cci_map[] = {
 	PLAT_MT_CCI_CLUSTER0_SL_IFACE_IX,
-	PLAT_MT_CCI_CLUSTER1_SL_IFACE_IX
 };
 
 /* Table of regions to map using the MMU.  */
