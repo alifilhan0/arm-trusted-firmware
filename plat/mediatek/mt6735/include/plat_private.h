@@ -25,4 +25,5 @@ void plat_cci_disable(void);
 int mt_setup_topology(void);
 void config_l2_size(void);
 int start_devapc(void);
+void emimpu_setup(void);
 #endif /* PLAT_PRIVATE_H */
