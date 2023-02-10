@@ -41,17 +41,15 @@
 #define PLAT_MAX_RET_STATE		U(1)
 #define PLAT_MAX_OFF_STATE		U(2)
 #define PLATFORM_SYSTEM_COUNT		U(1)
-#define PLATFORM_CLUSTER_COUNT		U(2)
+#define PLATFORM_CLUSTER_COUNT		U(1)
 #define PLATFORM_CLUSTER0_CORE_COUNT	U(4)
-#define PLATFORM_CLUSTER1_CORE_COUNT	U(2)
-#define PLATFORM_CORE_COUNT		(PLATFORM_CLUSTER1_CORE_COUNT +	\
-					 PLATFORM_CLUSTER0_CORE_COUNT)
+#define PLATFORM_CORE_COUNT		(PLATFORM_CLUSTER0_CORE_COUNT)
 #define PLATFORM_MAX_CPUS_PER_CLUSTER	U(4)
 #define PLATFORM_NUM_AFFS		(PLATFORM_SYSTEM_COUNT +	\
 					 PLATFORM_CLUSTER_COUNT +	\
 					 PLATFORM_CORE_COUNT)
 
-#define SOC_CHIP_ID                     U(0x8173)
+#define SOC_CHIP_ID                     U(0x6735)
 
 /*******************************************************************************
  * Platform memory map related constants
@@ -75,7 +73,7 @@
  * present). BL31_BASE is calculated using the current BL3-1 debug size plus a
  * little space for growth.
  */
-#define BL31_BASE		(TZRAM_BASE + 0x1000)
+#define BL31_BASE		(TZRAM_BASE)
 #define BL31_LIMIT		(TZRAM_BASE + TZRAM_SIZE)
 #define TZRAM2_LIMIT		(TZRAM2_BASE + TZRAM2_SIZE)
 

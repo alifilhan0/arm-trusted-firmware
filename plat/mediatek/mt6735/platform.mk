@@ -35,8 +35,6 @@ BL31_SOURCES		+=	common/desc_image_load.c			\
 				drivers/ti/uart/aarch64/16550_console.S		\
 				lib/cpus/aarch64/aem_generic.S			\
 				lib/cpus/aarch64/cortex_a53.S			\
-				lib/cpus/aarch64/cortex_a57.S			\
-				lib/cpus/aarch64/cortex_a72.S			\
 				${MTK_PLAT}/common/drivers/pmic_wrap/pmic_wrap_init.c	\
 				${MTK_PLAT}/common/drivers/rtc/rtc_common.c	\
 				${MTK_PLAT}/common/mtk_plat_common.c		\
@@ -67,6 +65,8 @@ BL31_SOURCES		+=	common/desc_image_load.c			\
 ERRATA_A53_826319	:=	1
 ERRATA_A53_836870	:=	1
 ERRATA_A53_855873	:=	1
+ERRATA_A53_843419	:=	1
+ERRATA_A53_1530924	:=	1
 
 # indicate the reset vector address can be programmed
 PROGRAMMABLE_RESET_ADDRESS	:=	1

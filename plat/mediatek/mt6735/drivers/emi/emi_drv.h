@@ -75,6 +75,5 @@
 extern uint64_t sip_emimpu_write(unsigned int offset, unsigned int reg_value);
 extern uint32_t sip_emimpu_read(unsigned int offset);
 extern void emimpu_set_security_access(void);
-extern void emimpu_setup(void);
 
 #endif

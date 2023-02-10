@@ -17,7 +17,6 @@ const unsigned char mtk_power_domain_tree_desc[] = {
 	/* No of children for the first cluster node */
 	PLATFORM_CLUSTER0_CORE_COUNT,
 	/* No of children for the second cluster node */
-	PLATFORM_CLUSTER1_CORE_COUNT
 };
 
 /*******************************************************************************

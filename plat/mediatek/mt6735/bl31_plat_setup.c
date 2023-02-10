@@ -98,7 +98,7 @@ void bl31_platform_setup(void)
 	plat_arm_gic_init();
 
 	/* Initialize spm at boot time */
-	spm_boot_init();
+	//spm_boot_init();
 }
 
 /*******************************************************************************

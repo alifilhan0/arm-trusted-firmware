@@ -10,6 +10,7 @@
 #include <common/bl_common.h>
 #include <common/debug.h>
 #include <drivers/arm/cci.h>
+#include <lib/mmio.h>
 #include <lib/utils.h>
 #include <lib/xlat_tables/xlat_tables.h>
 
@@ -71,6 +72,8 @@ void plat_cci_init(void)
 {
 	/* Initialize CCI driver */
 	cci_init(PLAT_MT_CCI_BASE, cci_map, ARRAY_SIZE(cci_map));
+    /* Enable non-secure access to CCI */
+    mmio_write_32(PLAT_MT_CCI_BASE + 0x8, 0x1);
 }
 
 void plat_cci_enable(void)
