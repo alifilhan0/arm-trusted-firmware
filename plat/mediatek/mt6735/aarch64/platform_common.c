@@ -67,25 +67,3 @@ unsigned int plat_get_syscnt_freq2(void)
 {
 	return SYS_COUNTER_FREQ_IN_TICKS;
 }
-
-void plat_cci_init(void)
-{
-	/* Initialize CCI driver */
-	cci_init(PLAT_MT_CCI_BASE, cci_map, ARRAY_SIZE(cci_map));
-    /* Enable non-secure access to CCI */
-    mmio_write_32(PLAT_MT_CCI_BASE + 0x8, 0x1);
-}
-
-void plat_cci_enable(void)
-{
-	/*
-	 * Enable CCI coherency for this cluster.
-	 * No need for locks as no other cpu is active at the moment.
-	 */
-	cci_enable_snoop_dvm_reqs(MPIDR_AFFLVL1_VAL(read_mpidr()));
-}
-
-void plat_cci_disable(void)
-{
-	cci_disable_snoop_dvm_reqs(MPIDR_AFFLVL1_VAL(read_mpidr()));
-}
