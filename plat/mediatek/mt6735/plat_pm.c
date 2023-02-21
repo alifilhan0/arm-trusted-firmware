@@ -9,7 +9,6 @@
 
 #include <arch_helpers.h>
 #include <common/debug.h>
-#include <drivers/arm/cci.h>
 #include <drivers/arm/gicv2.h>
 #include <drivers/ti/uart/uart_16550.h>
 #include <lib/bakery_lock.h>
@@ -298,9 +297,6 @@ static void plat_power_domain_off(const psci_power_state_t *state)
 	trace_power_flow(mpidr, CPU_DOWN);
 
 	if (MTK_CLUSTER_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
-		/* Disable coherency if this cluster is to be turned off */
-		plat_cci_disable();
-
 		trace_power_flow(mpidr, CLUSTER_DOWN);
 	}
 }
@@ -340,7 +336,6 @@ static void plat_power_domain_suspend(const psci_power_state_t *state)
 	/* Perform the common cluster specific operations */
 	if (MTK_CLUSTER_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
 		/* Disable coherency if this cluster is to be turned off */
-		plat_cci_disable();
 	}
 
 	if (MTK_SYSTEM_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
@@ -372,7 +367,6 @@ static void plat_power_domain_on_finish(const psci_power_state_t *state)
 		mtk_system_pwr_domain_resume();
 
 	if (state->pwr_domain_state[MPIDR_AFFLVL1] == MTK_LOCAL_STATE_OFF) {
-		plat_cci_enable();
 		trace_power_flow(mpidr, CLUSTER_UP);
 	}
 
@@ -409,7 +403,6 @@ static void plat_power_domain_suspend_finish(const psci_power_state_t *state)
 	/* Perform the common cluster specific operations */
 	if (MTK_CLUSTER_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
 		/* Enable coherency if this cluster was off */
-		plat_cci_enable();
 	}
 
 	mt_platform_restore_context(mpidr);
