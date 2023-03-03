@@ -5,363 +5,304 @@
  */
 
 #include <common/debug.h>
-#include <lib/bakery_lock.h>
+#include <drivers/delay_timer.h>
 #include <lib/mmio.h>
-
+#include <spm.h>
 #include <platform_def.h>
 #include <spm.h>
-#include <spm_suspend.h>
 
-/*
- * System Power Manager (SPM) is a hardware module, which controls cpu or
- * system power for different power scenarios using different firmware, i.e.,
- * - spm_hotplug.c for cpu power control in cpu hotplug flow.
- * - spm_mcdi.c for cpu power control in cpu idle power saving state.
- * - spm_suspend.c for system power control in system suspend scenario.
- *
- * This file provide utility functions common to hotplug, mcdi(idle), suspend
- * power scenarios. A bakery lock (software lock) is incoporated to protect
- * certain critical sections to avoid kicking different SPM firmware
- * concurrently.
- */
+#define SRAM_ISOINT_B           BIT(6)
+#define SRAM_CKISO              BIT(5)
+#define L1_PDN			BIT(0)
+#define L1_PDN_ACK		BIT(8)
+#define PWR_RST_B		BIT(0)
+#define PWR_ISO			BIT(1)
+#define PWR_ON			BIT(2)
+#define PWR_ON_2ND		BIT(3)
+#define PWR_CLK_DIS		BIT(4)
 
-#define SPM_SYSCLK_SETTLE       128	/* 3.9ms */
+#define PWR_STATUS_MD1		BIT(0)
+#define PWR_STATUS_CONN		BIT(1)
+#define PWR_STATUS_DISP		BIT(3)
+#define PWR_STATUS_MFG		BIT(4)
+#define PWR_STATUS_ISP		BIT(5)
+#define PWR_STATUS_VDEC		BIT(7)
+#define PWR_STATUS_VENC		BIT(8)
+#define PWR_STATUS_MD2		BIT(22)
 
-DEFINE_BAKERY_LOCK(spm_lock);
+/* Infrasys configuration */
+#define INFRA_TOPDCM_CTRL	0x10
+#define INFRA_TOPAXI_PROT_EN	0x220
+#define INFRA_TOPAXI_PROT_STA1	0x228
+#define INFRA_TOPAXI_PROT_STA1  0x228
 
-static int spm_hotplug_ready __section("tzfw_coherent_mem");
-static int spm_mcdi_ready __section("tzfw_coherent_mem");
-static int spm_suspend_ready __section("tzfw_coherent_mem");
+struct scp_domain_data {
+	uint32_t sta_mask;
+	int ctl_offs;
+	uint32_t sram_pdn_bits;
+	uint32_t sram_pdn_ack_bits;
+	uint32_t bus_prot_mask;
+};
 
-void spm_lock_init(void)
+enum {
+	LITTLE_CPU3	= 1U << 12,
+	LITTLE_CPU2	= 1U << 11,
+	LITTLE_CPU1	= 1U << 10,
+};
+
+static struct scp_domain_data scp_domain_mt6735[] = {
+	[MT6735_POWER_DOMAIN_CONN] = {
+		.sta_mask = PWR_STATUS_CONN,
+		.ctl_offs = SPM_CONN_PWR_CON,
+		.sram_pdn_bits = GENMASK(8, 8),
+		.sram_pdn_ack_bits = 0,
+	},
+	[MT6735_POWER_DOMAIN_VENC] = {
+		.sta_mask = PWR_STATUS_VENC,
+		.ctl_offs = SPM_VEN_PWR_CON,
+		.sram_pdn_bits = GENMASK(11, 8),
+		.sram_pdn_ack_bits = GENMASK(15, 12),
+	},
+
+	[MT6735_POWER_DOMAIN_DISP] = {
+		.sta_mask = PWR_STATUS_DISP,
+		.ctl_offs = SPM_DIS_PWR_CON,
+		.sram_pdn_bits = GENMASK(11, 8),
+		.sram_pdn_ack_bits = GENMASK(12, 12),
+	},
+	[MT6735_POWER_DOMAIN_MFG] = {
+		.sta_mask = PWR_STATUS_MFG,
+		.ctl_offs = SPM_MFG_PWR_CON,
+		.sram_pdn_bits = GENMASK(11, 8),
+		.sram_pdn_ack_bits = GENMASK(12, 12),
+	},
+	[MT6735_POWER_DOMAIN_VDEC] = {
+		.sta_mask = PWR_STATUS_VDEC,
+		.ctl_offs = SPM_VDE_PWR_CON,
+		.sram_pdn_bits = GENMASK(11, 8),
+		.sram_pdn_ack_bits = GENMASK(12, 12),
+	},
+	[MT6735_POWER_DOMAIN_ISP] = {
+		.sta_mask = PWR_STATUS_ISP,
+		.ctl_offs = SPM_ISP_PWR_CON,
+		.sram_pdn_bits = GENMASK(11, 8),
+		.sram_pdn_ack_bits = GENMASK(13, 12),
+	},
+	[MT6735_POWER_DOMAIN_MD1] = {
+		.sta_mask = PWR_STATUS_MD1,
+		.ctl_offs = 0x0284,
+		.sram_pdn_bits = GENMASK(8, 8),
+		.sram_pdn_ack_bits = 0,
+	},
+	[MT6735_POWER_DOMAIN_MD2] = {
+		.sta_mask = PWR_STATUS_MD2,
+		.ctl_offs = 0x02d4,
+		.sram_pdn_bits = GENMASK(8, 8),
+		.sram_pdn_ack_bits = 0,
+    },
+};
+
+static void mtcmos_ctrl_little_on(unsigned int linear_id)
 {
-	bakery_lock_init(&spm_lock);
+	uint32_t reg_pwr_con;
+	uint32_t reg_l1_pdn;
+	uint32_t bit_cpu;
+
+	switch (linear_id) {
+	case 1:
+		reg_pwr_con = SPM_CA7_CPU1_PWR_CON;
+		reg_l1_pdn = SPM_CA7_CPU1_L1_PDN;
+		bit_cpu = LITTLE_CPU1;
+		break;
+	case 2:
+		reg_pwr_con = SPM_CA7_CPU2_PWR_CON;
+		reg_l1_pdn = SPM_CA7_CPU2_L1_PDN;
+		bit_cpu = LITTLE_CPU2;
+		break;
+	case 3:
+		reg_pwr_con = SPM_CA7_CPU3_PWR_CON;
+		reg_l1_pdn = SPM_CA7_CPU3_L1_PDN;
+		bit_cpu = LITTLE_CPU3;
+		break;
+	default:
+		/* should never come to here */
+		return;
+	}
+	/* enable register control */
+	mmio_write_32(SPM_POWERON_CONFIG_SET,
+		      SPM_REGWR_CFG_KEY | SPM_REGWR_EN);
+
+	mmio_setbits_32(reg_pwr_con, PWR_ON);
+	udelay(1);
+	mmio_setbits_32(reg_pwr_con, PWR_ON_2ND);
+
+	while ((mmio_read_32(SPM_PWR_STATUS) & bit_cpu) != bit_cpu ||
+	       (mmio_read_32(SPM_PWR_STATUS_2ND) & bit_cpu) != bit_cpu)
+		continue;
+
+	mmio_clrbits_32(reg_pwr_con, PWR_ISO);
+	mmio_clrbits_32(reg_l1_pdn, L1_PDN);
+
+	while (mmio_read_32(reg_l1_pdn) & L1_PDN_ACK)
+		continue;
+
+	mmio_setbits_32(reg_pwr_con, SRAM_ISOINT_B);
+	mmio_clrbits_32(reg_pwr_con, SRAM_CKISO);
+	mmio_clrbits_32(reg_pwr_con, PWR_CLK_DIS);
+	mmio_setbits_32(reg_pwr_con, PWR_RST_B);
 }
 
-void spm_lock_get(void)
+void mtcmos_little_cpu_on(void)
 {
-	bakery_lock_get(&spm_lock);
+	mtcmos_ctrl_little_on(1);
+	mtcmos_ctrl_little_on(2);
+	mtcmos_ctrl_little_on(3);
 }
 
-void spm_lock_release(void)
+static void mtcmos_ctrl_little_off(unsigned int linear_id)
 {
-	bakery_lock_release(&spm_lock);
-}
+	uint32_t reg_pwr_con;
+	uint32_t reg_l1_pdn;
+	uint32_t bit_cpu;
 
-int is_mcdi_ready(void)
-{
-	return spm_mcdi_ready;
-}
-
-int is_hotplug_ready(void)
-{
-	return spm_hotplug_ready;
-}
-
-int is_suspend_ready(void)
-{
-	return spm_suspend_ready;
-}
-
-void set_mcdi_ready(void)
-{
-	spm_mcdi_ready = 1;
-	spm_hotplug_ready = 0;
-	spm_suspend_ready = 0;
-}
-
-void set_hotplug_ready(void)
-{
-	spm_mcdi_ready = 0;
-	spm_hotplug_ready = 1;
-	spm_suspend_ready = 0;
-}
-
-void set_suspend_ready(void)
-{
-	spm_mcdi_ready = 0;
-	spm_hotplug_ready = 0;
-	spm_suspend_ready = 1;
-}
-
-void clear_all_ready(void)
-{
-	spm_mcdi_ready = 0;
-	spm_hotplug_ready = 0;
-	spm_suspend_ready = 0;
-}
-
-void spm_register_init(void)
-{
-	mmio_write_32(SPM_POWERON_CONFIG_SET, SPM_REGWR_CFG_KEY | SPM_REGWR_EN);
-
-	mmio_write_32(SPM_POWER_ON_VAL0, 0);
-	mmio_write_32(SPM_POWER_ON_VAL1, POWER_ON_VAL1_DEF);
-	mmio_write_32(SPM_PCM_PWR_IO_EN, 0);
-
-	mmio_write_32(SPM_PCM_CON0, CON0_CFG_KEY | CON0_PCM_SW_RESET);
-	mmio_write_32(SPM_PCM_CON0, CON0_CFG_KEY);
-	if (mmio_read_32(SPM_PCM_FSM_STA) != PCM_FSM_STA_DEF)
-		WARN("PCM reset failed\n");
-
-	mmio_write_32(SPM_PCM_CON0, CON0_CFG_KEY | CON0_IM_SLEEP_DVS);
-	mmio_write_32(SPM_PCM_CON1, CON1_CFG_KEY | CON1_EVENT_LOCK_EN |
-		      CON1_SPM_SRAM_ISO_B | CON1_SPM_SRAM_SLP_B |
-		      CON1_MIF_APBEN);
-	mmio_write_32(SPM_PCM_IM_PTR, 0);
-	mmio_write_32(SPM_PCM_IM_LEN, 0);
-
-	mmio_write_32(SPM_CLK_CON, CC_SYSCLK0_EN_1 | CC_SYSCLK0_EN_0 |
-		      CC_SYSCLK1_EN_0 | CC_SRCLKENA_MASK_0 | CC_CLKSQ1_SEL |
-		      CC_CXO32K_RM_EN_MD2 | CC_CXO32K_RM_EN_MD1 |
-		      CC_MD32_DCM_EN);
-
-	mmio_write_32(SPM_SLEEP_ISR_MASK, 0xff0c);
-	mmio_write_32(SPM_SLEEP_ISR_STATUS, 0xc);
-	mmio_write_32(SPM_PCM_SW_INT_CLEAR, 0xff);
-}
-
-void spm_reset_and_init_pcm(void)
-{
-	unsigned int con1;
-	int i = 0;
-
-	mmio_write_32(SPM_PCM_CON0, CON0_CFG_KEY | CON0_PCM_SW_RESET);
-	mmio_write_32(SPM_PCM_CON0, CON0_CFG_KEY);
-	while (mmio_read_32(SPM_PCM_FSM_STA) != PCM_FSM_STA_DEF) {
-		i++;
-		if (i > 1000) {
-			i = 0;
-			WARN("PCM reset failed\n");
-			break;
-		}
+	switch (linear_id) {
+	case 1:
+		reg_pwr_con = SPM_CA7_CPU1_PWR_CON;
+		reg_l1_pdn = SPM_CA7_CPU1_L1_PDN;
+		bit_cpu = LITTLE_CPU1;
+		break;
+	case 2:
+		reg_pwr_con = SPM_CA7_CPU2_PWR_CON;
+		reg_l1_pdn = SPM_CA7_CPU2_L1_PDN;
+		bit_cpu = LITTLE_CPU2;
+		break;
+	case 3:
+		reg_pwr_con = SPM_CA7_CPU3_PWR_CON;
+		reg_l1_pdn = SPM_CA7_CPU3_L1_PDN;
+		bit_cpu = LITTLE_CPU3;
+		break;
+	default:
+		/* should never come to here */
+		return;
 	}
 
-	mmio_write_32(SPM_PCM_CON0, CON0_CFG_KEY | CON0_IM_SLEEP_DVS);
+	/* enable register control */
+	mmio_write_32(SPM_POWERON_CONFIG_SET,
+			(SPM_PROJECT_CODE << 16) | (1U << 0));
 
-	con1 = mmio_read_32(SPM_PCM_CON1) &
-		(CON1_PCM_WDT_WAKE_MODE | CON1_PCM_WDT_EN);
-	mmio_write_32(SPM_PCM_CON1, con1 | CON1_CFG_KEY | CON1_EVENT_LOCK_EN |
-		      CON1_SPM_SRAM_ISO_B | CON1_SPM_SRAM_SLP_B |
-		      CON1_IM_NONRP_EN | CON1_MIF_APBEN);
+	mmio_setbits_32(reg_pwr_con, PWR_ISO);
+	mmio_setbits_32(reg_pwr_con, SRAM_CKISO);
+	mmio_clrbits_32(reg_pwr_con, SRAM_ISOINT_B);
+	mmio_setbits_32(reg_l1_pdn, L1_PDN);
+
+	while (!(mmio_read_32(reg_l1_pdn) & L1_PDN_ACK))
+		continue;
+
+	mmio_clrbits_32(reg_pwr_con, PWR_RST_B);
+	mmio_setbits_32(reg_pwr_con, PWR_CLK_DIS);
+	mmio_clrbits_32(reg_pwr_con, PWR_ON);
+	mmio_clrbits_32(reg_pwr_con, PWR_ON_2ND);
+
+	while ((mmio_read_32(SPM_PWR_STATUS) & bit_cpu) ||
+	       (mmio_read_32(SPM_PWR_STATUS_2ND) & bit_cpu))
+		continue;
 }
 
-void spm_init_pcm_register(void)
+void mtcmos_little_cpu_off(void)
 {
-	mmio_write_32(SPM_PCM_REG_DATA_INI, mmio_read_32(SPM_POWER_ON_VAL0));
-	mmio_write_32(SPM_PCM_PWR_IO_EN, PCM_RF_SYNC_R0);
-	mmio_write_32(SPM_PCM_PWR_IO_EN, 0);
-
-	mmio_write_32(SPM_PCM_REG_DATA_INI, mmio_read_32(SPM_POWER_ON_VAL1));
-	mmio_write_32(SPM_PCM_PWR_IO_EN, PCM_RF_SYNC_R7);
-	mmio_write_32(SPM_PCM_PWR_IO_EN, 0);
+	/* turn off little cpu 1 - 3 */
+	mtcmos_ctrl_little_off(1);
+	mtcmos_ctrl_little_off(2);
+	mtcmos_ctrl_little_off(3);
 }
 
-void spm_set_power_control(const struct pwr_ctrl *pwrctrl)
+static int mtcmos_power_on(uint32_t on, struct scp_domain_data *data)
 {
-	mmio_write_32(SPM_AP_STANBY_CON, (!pwrctrl->md32_req_mask << 21) |
-					 (!pwrctrl->mfg_req_mask << 17) |
-					 (!pwrctrl->disp_req_mask << 16) |
-					 (!!pwrctrl->mcusys_idle_mask << 7) |
-					 (!!pwrctrl->ca15top_idle_mask << 6) |
-					 (!!pwrctrl->ca7top_idle_mask << 5) |
-					 (!!pwrctrl->wfi_op << 4));
-	mmio_write_32(SPM_PCM_SRC_REQ, (!!pwrctrl->pcm_apsrc_req << 0));
-	mmio_write_32(SPM_PCM_PASR_DPD_2, 0);
+	uintptr_t ctl_addr = SPM_BASE + data->ctl_offs;
+	uint32_t val, pdn_ack = data->sram_pdn_ack_bits;
 
-	mmio_clrsetbits_32(SPM_CLK_CON, CC_SRCLKENA_MASK_0,
-			   (pwrctrl->srclkenai_mask ? CC_SRCLKENA_MASK_0 : 0));
+	mmio_write_32(SPM_POWERON_CONFIG_SET,
+		      SPM_REGWR_CFG_KEY | SPM_REGWR_EN);
 
-	mmio_write_32(SPM_SLEEP_CA7_WFI0_EN, !!pwrctrl->ca7_wfi0_en);
-	mmio_write_32(SPM_SLEEP_CA7_WFI1_EN, !!pwrctrl->ca7_wfi1_en);
-	mmio_write_32(SPM_SLEEP_CA7_WFI2_EN, !!pwrctrl->ca7_wfi2_en);
-	mmio_write_32(SPM_SLEEP_CA7_WFI3_EN, !!pwrctrl->ca7_wfi3_en);
-}
+	val = mmio_read_32(ctl_addr);
+	val |= PWR_ON;
+	mmio_write_32(ctl_addr, val);
 
-void spm_set_wakeup_event(const struct pwr_ctrl *pwrctrl)
-{
-	unsigned int val, mask;
+	val |= PWR_ON_2ND;
+	mmio_write_32(ctl_addr, val);
 
-	if (pwrctrl->timer_val_cust == 0)
-		val = pwrctrl->timer_val ? pwrctrl->timer_val : PCM_TIMER_MAX;
-	else
-		val = pwrctrl->timer_val_cust;
+	while (!(mmio_read_32(SPM_PWR_STATUS) & data->sta_mask) ||
+	       !(mmio_read_32(SPM_PWR_STATUS_2ND) & data->sta_mask))
+		continue;
 
-	mmio_write_32(SPM_PCM_TIMER_VAL, val);
-	mmio_setbits_32(SPM_PCM_CON1, CON1_CFG_KEY);
+	val &= ~PWR_CLK_DIS;
+	mmio_write_32(ctl_addr, val);
 
-	if (pwrctrl->wake_src_cust == 0)
-		mask = pwrctrl->wake_src;
-	else
-		mask = pwrctrl->wake_src_cust;
+	val &= ~PWR_ISO;
+	mmio_write_32(ctl_addr, val);
 
-	if (pwrctrl->syspwreq_mask)
-		mask &= ~WAKE_SRC_SYSPWREQ;
+	val |= PWR_RST_B;
+	mmio_write_32(ctl_addr, val);
 
-	mmio_write_32(SPM_SLEEP_WAKEUP_EVENT_MASK, ~mask);
-	mmio_write_32(SPM_SLEEP_ISR_MASK, 0xfe04);
-}
+	val &= ~data->sram_pdn_bits;
+	mmio_write_32(ctl_addr, val);
 
-void spm_get_wakeup_status(struct wake_status *wakesta)
-{
-	wakesta->assert_pc = mmio_read_32(SPM_PCM_REG_DATA_INI);
-	wakesta->r12 = mmio_read_32(SPM_PCM_REG12_DATA);
-	wakesta->raw_sta = mmio_read_32(SPM_SLEEP_ISR_RAW_STA);
-	wakesta->wake_misc = mmio_read_32(SPM_SLEEP_WAKEUP_MISC);
-	wakesta->timer_out = mmio_read_32(SPM_PCM_TIMER_OUT);
-	wakesta->r13 = mmio_read_32(SPM_PCM_REG13_DATA);
-	wakesta->idle_sta = mmio_read_32(SPM_SLEEP_SUBSYS_IDLE_STA);
-	wakesta->debug_flag = mmio_read_32(SPM_PCM_PASR_DPD_3);
-	wakesta->event_reg = mmio_read_32(SPM_PCM_EVENT_REG_STA);
-	wakesta->isr = mmio_read_32(SPM_SLEEP_ISR_STATUS);
-}
+	while ((mmio_read_32(ctl_addr) & pdn_ack))
+		continue;
 
-void spm_init_event_vector(const struct pcm_desc *pcmdesc)
-{
-	/* init event vector register */
-	mmio_write_32(SPM_PCM_EVENT_VECTOR0, pcmdesc->vec0);
-	mmio_write_32(SPM_PCM_EVENT_VECTOR1, pcmdesc->vec1);
-	mmio_write_32(SPM_PCM_EVENT_VECTOR2, pcmdesc->vec2);
-	mmio_write_32(SPM_PCM_EVENT_VECTOR3, pcmdesc->vec3);
-	mmio_write_32(SPM_PCM_EVENT_VECTOR4, pcmdesc->vec4);
-	mmio_write_32(SPM_PCM_EVENT_VECTOR5, pcmdesc->vec5);
-	mmio_write_32(SPM_PCM_EVENT_VECTOR6, pcmdesc->vec6);
-	mmio_write_32(SPM_PCM_EVENT_VECTOR7, pcmdesc->vec7);
-
-	/* event vector will be enabled by PCM itself */
-}
-
-void spm_kick_im_to_fetch(const struct pcm_desc *pcmdesc)
-{
-	unsigned int ptr = 0, len, con0;
-
-	ptr = (unsigned int)(unsigned long)(pcmdesc->base);
-	len = pcmdesc->size - 1;
-	if (mmio_read_32(SPM_PCM_IM_PTR) != ptr ||
-	    mmio_read_32(SPM_PCM_IM_LEN) != len ||
-	    pcmdesc->sess > 2) {
-		mmio_write_32(SPM_PCM_IM_PTR, ptr);
-		mmio_write_32(SPM_PCM_IM_LEN, len);
-	} else {
-		mmio_setbits_32(SPM_PCM_CON1, CON1_CFG_KEY | CON1_IM_SLAVE);
+	if (data->bus_prot_mask) {
+		mmio_clrbits_32(INFRACFG_AO_BASE + INFRA_TOPAXI_PROT_EN,
+				data->bus_prot_mask);
+		while ((mmio_read_32(INFRACFG_AO_BASE + INFRA_TOPAXI_PROT_STA1) &
+			data->bus_prot_mask))
+			continue;
 	}
 
-	/* kick IM to fetch (only toggle IM_KICK) */
-	con0 = mmio_read_32(SPM_PCM_CON0) & ~(CON0_IM_KICK | CON0_PCM_KICK);
-	mmio_write_32(SPM_PCM_CON0, con0 | CON0_CFG_KEY | CON0_IM_KICK);
-	mmio_write_32(SPM_PCM_CON0, con0 | CON0_CFG_KEY);
-
-	/* kick IM to fetch (only toggle PCM_KICK) */
-	con0 = mmio_read_32(SPM_PCM_CON0) & ~(CON0_IM_KICK | CON0_PCM_KICK);
-	mmio_write_32(SPM_PCM_CON0, con0 | CON0_CFG_KEY | CON0_PCM_KICK);
-	mmio_write_32(SPM_PCM_CON0, con0 | CON0_CFG_KEY);
+	return 0;
 }
 
-void spm_set_sysclk_settle(void)
+int mtcmos_non_cpu_ctrl(uint32_t on, uint32_t num)
 {
-	mmio_write_32(SPM_CLK_SETTLE, SPM_SYSCLK_SETTLE);
+	uint32_t ret = -1;
+	struct scp_domain_data *data;
 
-	INFO("settle = %u\n", mmio_read_32(SPM_CLK_SETTLE));
-}
-
-void spm_kick_pcm_to_run(struct pwr_ctrl *pwrctrl)
-{
-	unsigned int con1;
-
-	con1 = mmio_read_32(SPM_PCM_CON1) &
-		~(CON1_PCM_WDT_WAKE_MODE | CON1_PCM_WDT_EN);
-
-	mmio_write_32(SPM_PCM_CON1, CON1_CFG_KEY | con1);
-
-	if (mmio_read_32(SPM_PCM_TIMER_VAL) > PCM_TIMER_MAX)
-		mmio_write_32(SPM_PCM_TIMER_VAL, PCM_TIMER_MAX);
-
-	mmio_write_32(SPM_PCM_WDT_TIMER_VAL,
-		      mmio_read_32(SPM_PCM_TIMER_VAL) + PCM_WDT_TIMEOUT);
-
-	mmio_write_32(SPM_PCM_CON1, con1 | CON1_CFG_KEY | CON1_PCM_WDT_EN);
-	mmio_write_32(SPM_PCM_PASR_DPD_0, 0);
-
-	mmio_write_32(SPM_PCM_MAS_PAUSE_MASK, 0xffffffff);
-	mmio_write_32(SPM_PCM_REG_DATA_INI, 0);
-	mmio_clrbits_32(SPM_CLK_CON, CC_DISABLE_DORM_PWR);
-
-	mmio_write_32(SPM_PCM_FLAGS, pwrctrl->pcm_flags);
-
-	mmio_clrsetbits_32(SPM_CLK_CON, CC_LOCK_INFRA_DCM,
-			   (pwrctrl->infra_dcm_lock ? CC_LOCK_INFRA_DCM : 0));
-
-	mmio_write_32(SPM_PCM_PWR_IO_EN,
-		      (pwrctrl->r0_ctrl_en ? PCM_PWRIO_EN_R0 : 0) |
-		      (pwrctrl->r7_ctrl_en ? PCM_PWRIO_EN_R7 : 0));
-}
-
-void spm_clean_after_wakeup(void)
-{
-	mmio_clrsetbits_32(SPM_PCM_CON1, CON1_PCM_WDT_EN, CON1_CFG_KEY);
-
-	mmio_write_32(SPM_PCM_PWR_IO_EN, 0);
-	mmio_write_32(SPM_SLEEP_CPU_WAKEUP_EVENT, 0);
-	mmio_clrsetbits_32(SPM_PCM_CON1, CON1_PCM_TIMER_EN, CON1_CFG_KEY);
-
-	mmio_write_32(SPM_SLEEP_WAKEUP_EVENT_MASK, ~0);
-	mmio_write_32(SPM_SLEEP_ISR_MASK, 0xFF0C);
-	mmio_write_32(SPM_SLEEP_ISR_STATUS, 0xC);
-	mmio_write_32(SPM_PCM_SW_INT_CLEAR, 0xFF);
-}
-
-enum wake_reason_t spm_output_wake_reason(struct wake_status *wakesta)
-{
-	enum wake_reason_t wr;
-	int i;
-
-	wr = WR_UNKNOWN;
-
-	if (wakesta->assert_pc != 0) {
-		ERROR("PCM ASSERT AT %u, r12=0x%x, r13=0x%x, debug_flag=0x%x\n",
-		      wakesta->assert_pc, wakesta->r12, wakesta->r13,
-		      wakesta->debug_flag);
-		return WR_PCM_ASSERT;
+	switch (num) {
+	case MT6735_POWER_DOMAIN_CONN:
+		data = &scp_domain_mt6735[MT6735_POWER_DOMAIN_CONN];
+		ret = mtcmos_power_on(on, data);
+		break;
+	case MT6735_POWER_DOMAIN_VENC:
+		data = &scp_domain_mt6735[MT6735_POWER_DOMAIN_VENC];
+		ret = mtcmos_power_on(on, data);
+		break;
+	case MT6735_POWER_DOMAIN_DISP:
+		data = &scp_domain_mt6735[MT6735_POWER_DOMAIN_DISP];
+		ret = mtcmos_power_on(on, data);
+		break;
+	case MT6735_POWER_DOMAIN_MFG:
+		data = &scp_domain_mt6735[MT6735_POWER_DOMAIN_MFG];
+		ret = mtcmos_power_on(on, data);
+		break;
+	case MT6735_POWER_DOMAIN_VDEC:
+		data = &scp_domain_mt6735[MT6735_POWER_DOMAIN_VDEC];
+		ret = mtcmos_power_on(on, data);
+		break;
+	case MT6735_POWER_DOMAIN_ISP:
+		data = &scp_domain_mt6735[MT6735_POWER_DOMAIN_ISP];
+		ret = mtcmos_power_on(on, data);
+		break;
+	case MT6735_POWER_DOMAIN_MD1:
+		data = &scp_domain_mt6735[MT6735_POWER_DOMAIN_MD1];
+		ret = mtcmos_power_on(on, data);
+		break;
+	case MT6735_POWER_DOMAIN_MD2:
+		data = &scp_domain_mt6735[MT6735_POWER_DOMAIN_MD2];
+		ret = mtcmos_power_on(on, data);
+		break;
+	default:
+		INFO("No mapping MTCMOS(%d), ret = %d\n", num, ret);
+		break;
 	}
 
-	if (wakesta->r12 & WAKE_SRC_SPM_MERGE) {
-		if (wakesta->wake_misc & WAKE_MISC_PCM_TIMER)
-			wr = WR_PCM_TIMER;
-		if (wakesta->wake_misc & WAKE_MISC_CPU_WAKE)
-			wr = WR_WAKE_SRC;
-	}
-
-	for (i = 1; i < 32; i++) {
-		if (wakesta->r12 & (1U << i))
-			wr = WR_WAKE_SRC;
-	}
-
-	if ((wakesta->event_reg & 0x100000) == 0) {
-		INFO("pcm sleep abort!\n");
-		wr = WR_PCM_ABORT;
-	}
-
-	INFO("timer_out = %u, r12 = 0x%x, r13 = 0x%x, debug_flag = 0x%x\n",
-	     wakesta->timer_out, wakesta->r12, wakesta->r13,
-	     wakesta->debug_flag);
-
-	INFO("raw_sta = 0x%x, idle_sta = 0x%x, event_reg = 0x%x, isr = 0x%x\n",
-	     wakesta->raw_sta, wakesta->idle_sta, wakesta->event_reg,
-	     wakesta->isr);
-
-	return wr;
-}
-
-void spm_boot_init(void)
-{
-	/* set spm transaction to secure mode */
-	mmio_write_32(DEVAPC0_APC_CON, 0x0);
-	mmio_write_32(DEVAPC0_MAS_SEC_0, 0x200);
-
-	/* Only CPU0 is online during boot, initialize cpu online reserve bit */
-	mmio_write_32(SPM_PCM_RESERVE, 0xFE);
-	mmio_clrbits_32(AP_PLL_CON3, 0xFFFFF);
-	mmio_clrbits_32(AP_PLL_CON4, 0xF);
-	spm_lock_init();
-	spm_register_init();
+	return ret;
 }

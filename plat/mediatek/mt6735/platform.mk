@@ -46,13 +46,9 @@ BL31_SOURCES		+=	common/desc_image_load.c			\
 				${MTK_PLAT_SOC}/drivers/devapc/devapc.c		\
 				${MTK_PLAT_SOC}/drivers/emi/emi_mpu.c		\
 				${MTK_PLAT_SOC}/drivers/l2c/l2c.c		\
-				${MTK_PLAT_SOC}/drivers/spm/mtcmos.c		\
 				${MTK_PLAT_SOC}/drivers/rtc/rtc.c		\
 				${MTK_PLAT_SOC}/drivers/spm/spm.c		\
-				${MTK_PLAT_SOC}/drivers/spm/spm_hotplug.c	\
 				${MTK_PLAT_SOC}/drivers/gpio/mtgpio.c           \
-				${MTK_PLAT_SOC}/drivers/spm/spm_mcdi.c		\
-				${MTK_PLAT_SOC}/drivers/spm/spm_suspend.c	\
 				${MTK_PLAT_SOC}/drivers/timer/mt_cpuxgpt.c	\
 				${MTK_PLAT_SOC}/drivers/wdt/wdt.c		\
 				${MTK_PLAT_SOC}/plat_pm.c			\

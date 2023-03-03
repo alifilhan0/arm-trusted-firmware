@@ -21,11 +21,9 @@
 #include <mt_cpuxgpt.h> /* generic_timer_backup() */
 #include <plat_private.h>
 #include <power_tracer.h>
+#include <spm.h>
 #include <rtc.h>
 #include <scu.h>
-#include <spm_hotplug.h>
-#include <spm_mcdi.h>
-#include <spm_suspend.h>
 #include <wdt.h>
 
 #define MTK_PWR_LVL0	0
@@ -260,6 +258,8 @@ static int plat_power_domain_on(unsigned long mpidr)
 
 	cpu_id = mpidr & MPIDR_CPU_MASK;
 
+    mtcmos_little_cpu_on();
+    
 	rv = (uintptr_t)&mt6735_mcucfg->mp0_misc_config[3];
 	mmio_write_32(rv, MP0_CPUCFG_64BIT);
 
@@ -269,7 +269,7 @@ static int plat_power_domain_on(unsigned long mpidr)
 
 	INFO("cpu_on[%ld], entry %x\n", cpu_id, mmio_read_32(rv));
 
-	spm_hotplug_on(mpidr);
+	mtcmos_little_cpu_on();
 	return rc;
 }
 
@@ -292,7 +292,7 @@ static void plat_power_domain_off(const psci_power_state_t *state)
 	/* Prevent interrupts from spuriously waking up this cpu */
 	gicv2_cpuif_disable();
 
-	spm_hotplug_off(mpidr);
+	mtcmos_little_cpu_off();
 
 	trace_power_flow(mpidr, CPU_DOWN);
 
@@ -325,23 +325,11 @@ static void plat_power_domain_suspend(const psci_power_state_t *state)
 	rv = (uintptr_t)&mt6735_mcucfg->mp0_misc_config[(cpu_id + 1) * 2];
 	mmio_write_32(rv, secure_entrypoint);
 
-	if (MTK_SYSTEM_PWR_STATE(state) != MTK_LOCAL_STATE_OFF) {
-		spm_mcdi_prepare_for_off_state(mpidr, MTK_PWR_LVL0);
-		if (MTK_CLUSTER_PWR_STATE(state) == MTK_LOCAL_STATE_OFF)
-			spm_mcdi_prepare_for_off_state(mpidr, MTK_PWR_LVL1);
-	}
-
 	mt_platform_save_context(mpidr);
-
-	/* Perform the common cluster specific operations */
-	if (MTK_CLUSTER_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
-		/* Disable coherency if this cluster is to be turned off */
-	}
 
 	if (MTK_SYSTEM_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
 		disable_scu(mpidr);
 		generic_timer_backup();
-		spm_system_suspend();
 		/* Prevent interrupts from spuriously waking up this cpu */
 		gicv2_cpuif_disable();
 	}
@@ -395,23 +383,12 @@ static void plat_power_domain_suspend_finish(const psci_power_state_t *state)
 	if (MTK_SYSTEM_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
 		/* Enable the gic cpu interface */
 		plat_arm_gic_init();
-		spm_system_suspend_finish();
 		enable_scu(mpidr);
 		wdt_resume();
 	}
 
-	/* Perform the common cluster specific operations */
-	if (MTK_CLUSTER_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
-		/* Enable coherency if this cluster was off */
-	}
 
 	mt_platform_restore_context(mpidr);
-
-	if (MTK_SYSTEM_PWR_STATE(state) != MTK_LOCAL_STATE_OFF) {
-		spm_mcdi_finish_for_on_state(mpidr, MTK_PWR_LVL0);
-		if (MTK_CLUSTER_PWR_STATE(state) == MTK_LOCAL_STATE_OFF)
-			spm_mcdi_finish_for_on_state(mpidr, MTK_PWR_LVL1);
-	}
 
 	gicv2_pcpu_distif_init();
 }

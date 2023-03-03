@@ -12,6 +12,7 @@
 #include <mtcmos.h>
 #include <mtk_sip_svc.h>
 #include <plat_sip_calls.h>
+#include <spm.h>
 #include <wdt.h>
 
 /* Authorized secure register list */
