@@ -102,7 +102,7 @@ static struct scp_domain_data scp_domain_mt6735[] = {
     },
 };
 
-static void mtcmos_ctrl_little_on(unsigned int linear_id)
+void mtcmos_ctrl_little_on(unsigned int linear_id)
 {
 	uint32_t reg_pwr_con;
 	uint32_t reg_l1_pdn;
@@ -159,7 +159,7 @@ void mtcmos_little_cpu_on(void)
 	mtcmos_ctrl_little_on(3);
 }
 
-static void mtcmos_ctrl_little_off(unsigned int linear_id)
+void mtcmos_ctrl_little_off(unsigned int linear_id)
 {
 	uint32_t reg_pwr_con;
 	uint32_t reg_l1_pdn;

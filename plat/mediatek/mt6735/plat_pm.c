@@ -257,8 +257,6 @@ static int plat_power_domain_on(unsigned long mpidr)
 	uintptr_t rv;
 
 	cpu_id = mpidr & MPIDR_CPU_MASK;
-
-    mtcmos_little_cpu_on();
     
 	rv = (uintptr_t)&mt6735_mcucfg->mp0_misc_config[3];
 	mmio_write_32(rv, MP0_CPUCFG_64BIT);
@@ -266,10 +264,11 @@ static int plat_power_domain_on(unsigned long mpidr)
 	/* FIXME: is it MBOX address (boot address)? */
 	rv = (uintptr_t)&mt6735_mcucfg->mp0_misc_config[(cpu_id + 1) * 2];
 	mmio_write_32(rv, secure_entrypoint);
-
+    
+    mtcmos_ctrl_little_on(cpu_id);
+    
 	INFO("cpu_on[%ld], entry %x\n", cpu_id, mmio_read_32(rv));
 
-	mtcmos_little_cpu_on();
 	return rc;
 }
 
@@ -288,17 +287,20 @@ static int plat_power_domain_on(unsigned long mpidr)
 static void plat_power_domain_off(const psci_power_state_t *state)
 {
 	unsigned long mpidr = read_mpidr_el1();
+    unsigned long cpu_id;
+    cpu_id = mpidr & MPIDR_CPU_MASK;
 
 	/* Prevent interrupts from spuriously waking up this cpu */
 	gicv2_cpuif_disable();
-
-	mtcmos_little_cpu_off();
 
 	trace_power_flow(mpidr, CPU_DOWN);
 
 	if (MTK_CLUSTER_PWR_STATE(state) == MTK_LOCAL_STATE_OFF) {
 		trace_power_flow(mpidr, CLUSTER_DOWN);
 	}
+    
+    INFO("cpu_off[%ld]\n", cpu_id);
+    mtcmos_ctrl_little_off(cpu_id);
 }
 
 /*******************************************************************************
