@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2013-2019, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2022, Arm Limited and Contributors. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -10,26 +11,35 @@
 #include <common/debug.h>
 #include <drivers/generic_delay_timer.h>
 #include <lib/mmio.h>
+#include <lib/smccc.h>
 #include <lib/xlat_tables/xlat_tables.h>
+#include <plat/common/platform.h>
+#include <services/arm_arch_svc.h>
+
 #include <plat_ipi.h>
 #include <plat_private.h>
-#include <plat/common/platform.h>
+#include <plat_startup.h>
 
-#include "pm_api_sys.h"
+#include "zynqmp_pm_api_sys.h"
 
 /*
  * Table of regions to map using the MMU.
  * This doesn't include TZRAM as the 'mem_layout' argument passed to
  * configure_mmu_elx() will give the available subset of that,
  */
-const mmap_region_t plat_arm_mmap[] = {
+const mmap_region_t plat_zynqmp_mmap[] = {
 	{ DEVICE0_BASE, DEVICE0_BASE, DEVICE0_SIZE, MT_DEVICE | MT_RW | MT_SECURE },
 	{ DEVICE1_BASE, DEVICE1_BASE, DEVICE1_SIZE, MT_DEVICE | MT_RW | MT_SECURE },
 	{ CRF_APB_BASE, CRF_APB_BASE, CRF_APB_SIZE, MT_DEVICE | MT_RW | MT_SECURE },
 	{0}
 };
 
-static unsigned int zynqmp_get_silicon_ver(void)
+const mmap_region_t *plat_get_mmap(void)
+{
+	return plat_zynqmp_mmap;
+}
+
+static uint32_t zynqmp_get_silicon_ver(void)
 {
 	static unsigned int ver;
 
@@ -43,23 +53,24 @@ static unsigned int zynqmp_get_silicon_ver(void)
 	return ver;
 }
 
-unsigned int zynqmp_get_uart_clk(void)
+uint32_t get_uart_clk(void)
 {
 	unsigned int ver = zynqmp_get_silicon_ver();
 
-	if (ver == ZYNQMP_CSU_VERSION_QEMU)
+	if (ver == ZYNQMP_CSU_VERSION_QEMU) {
 		return 133000000;
-	else
+	} else {
 		return 100000000;
+	}
 }
 
 #if LOG_LEVEL >= LOG_LEVEL_NOTICE
 static const struct {
-	unsigned int id;
-	unsigned int ver;
-	char *name;
+	uint8_t id;
 	bool evexists;
-} zynqmp_devices[] = {
+	uint16_t ver;
+	char *name;
+} __packed zynqmp_devices[] = {
 	{
 		.id = 0x10,
 		.name = "XCZU3EG",
@@ -214,7 +225,8 @@ static const struct {
 #define ZYNQMP_PL_STATUS_MASK	BIT(ZYNQMP_PL_STATUS_BIT)
 #define ZYNQMP_CSU_VERSION_MASK	~(ZYNQMP_PL_STATUS_MASK)
 
-#define SILICON_ID_XCK26       0x4724093
+#define SILICON_ID_XCK24	0x4712093U
+#define SILICON_ID_XCK26	0x4724093U
 
 static char *zynqmp_get_silicon_idcode_name(void)
 {
@@ -222,19 +234,9 @@ static char *zynqmp_get_silicon_idcode_name(void)
 	size_t i, j, len;
 	const char *name = "EG/EV";
 
-#ifdef IMAGE_BL32
-	/*
-	 * For BL32, get the chip id info directly by reading corresponding
-	 * registers instead of making pm call. This has limitation
-	 * that these registers should be configured to have access
-	 * from APU which is default case.
-	 */
-	chipid[0] = mmio_read_32(ZYNQMP_CSU_BASEADDR + ZYNQMP_CSU_IDCODE_OFFSET);
-	chipid[1] = mmio_read_32(EFUSE_BASEADDR + EFUSE_IPDISABLE_OFFSET);
-#else
-	if (pm_get_chipid(chipid) != PM_RET_SUCCESS)
+	if (pm_get_chipid(chipid) != PM_RET_SUCCESS) {
 		return "XCZUUNKN";
-#endif
+	}
 
 	id = chipid[0] & (ZYNQMP_CSU_IDCODE_DEVICE_CODE_MASK |
 			  ZYNQMP_CSU_IDCODE_SVD_MASK);
@@ -243,23 +245,29 @@ static char *zynqmp_get_silicon_idcode_name(void)
 
 	for (i = 0; i < ARRAY_SIZE(zynqmp_devices); i++) {
 		if (zynqmp_devices[i].id == id &&
-		    zynqmp_devices[i].ver == (ver & ZYNQMP_CSU_VERSION_MASK))
+		    zynqmp_devices[i].ver == (ver & ZYNQMP_CSU_VERSION_MASK)) {
 			break;
+		}
 	}
 
 	if (i >= ARRAY_SIZE(zynqmp_devices)) {
-		if (chipid[0] == SILICON_ID_XCK26) {
+		switch (chipid[0]) {
+		case SILICON_ID_XCK24:
+			return "XCK24";
+		case SILICON_ID_XCK26:
 			return "XCK26";
-		} else {
+		default:
 			return "XCZUUNKN";
 		}
 	}
 
-	if (!zynqmp_devices[i].evexists)
+	if (!zynqmp_devices[i].evexists) {
 		return zynqmp_devices[i].name;
+	}
 
-	if (ver & ZYNQMP_PL_STATUS_MASK)
+	if ((ver & ZYNQMP_PL_STATUS_MASK) != 0U) {
 		return zynqmp_devices[i].name;
+	}
 
 	len = strlen(zynqmp_devices[i].name) - 2;
 	for (j = 0; j < strlen(name); j++) {
@@ -294,27 +302,52 @@ static char *zynqmp_print_silicon_idcode(void)
 	maskid = ZYNQMP_CSU_IDCODE_XILINX_ID << ZYNQMP_CSU_IDCODE_XILINX_ID_SHIFT |
 		 ZYNQMP_CSU_IDCODE_FAMILY << ZYNQMP_CSU_IDCODE_FAMILY_SHIFT;
 	if (tmp != maskid) {
-		ERROR("Incorrect XILINX IDCODE 0x%x, maskid 0x%x\n", id, maskid);
+		ERROR("Incorrect IDCODE 0x%x, maskid 0x%x\n", id, maskid);
 		return "UNKN";
 	}
-	VERBOSE("Xilinx IDCODE 0x%x\n", id);
+	VERBOSE("IDCODE 0x%x\n", id);
 	return zynqmp_get_silicon_idcode_name();
 }
 
-static unsigned int zynqmp_get_ps_ver(void)
+int32_t plat_is_smccc_feature_available(u_register_t fid)
+{
+	switch (fid) {
+	case SMCCC_ARCH_SOC_ID:
+		return SMC_ARCH_CALL_SUCCESS;
+	default:
+		return SMC_ARCH_CALL_NOT_SUPPORTED;
+	}
+
+	return SMC_ARCH_CALL_NOT_SUPPORTED;
+}
+
+int32_t plat_get_soc_version(void)
+{
+	uint32_t chip_id = zynqmp_get_silicon_ver();
+	uint32_t manfid = SOC_ID_SET_JEP_106(JEDEC_XILINX_BKID, JEDEC_XILINX_MFID);
+
+	return (int32_t)(manfid | (chip_id & 0xFFFF));
+}
+
+int32_t plat_get_soc_revision(void)
+{
+	return mmio_read_32(ZYNQMP_CSU_BASEADDR + ZYNQMP_CSU_IDCODE_OFFSET);
+}
+
+static uint32_t zynqmp_get_ps_ver(void)
 {
 	uint32_t ver = mmio_read_32(ZYNQMP_CSU_BASEADDR + ZYNQMP_CSU_VERSION_OFFSET);
 
 	ver &= ZYNQMP_PS_VER_MASK;
 	ver >>= ZYNQMP_PS_VER_SHIFT;
 
-	return ver + 1;
+	return ver + 1U;
 }
 
 static void zynqmp_print_platform_name(void)
 {
-	unsigned int ver = zynqmp_get_silicon_ver();
-	unsigned int rtl = zynqmp_get_rtl_ver();
+	uint32_t ver = zynqmp_get_silicon_ver();
+	uint32_t rtl = zynqmp_get_rtl_ver();
 	char *label = "Unknown";
 
 	switch (ver) {
@@ -329,8 +362,8 @@ static void zynqmp_print_platform_name(void)
 		break;
 	}
 
-	NOTICE("TF-A running on %s/%s at 0x%x\n",
-	       zynqmp_print_silicon_idcode(), label, BL31_BASE);
+	VERBOSE("TF-A running on %s/%s at 0x%x\n",
+		zynqmp_print_silicon_idcode(), label, BL31_BASE);
 	VERBOSE("TF-A running on v%d/RTL%d.%d\n",
 	       zynqmp_get_ps_ver(), (rtl & 0xf0) >> 4, rtl & 0xf);
 }
@@ -338,15 +371,16 @@ static void zynqmp_print_platform_name(void)
 static inline void zynqmp_print_platform_name(void) { }
 #endif
 
-unsigned int zynqmp_get_bootmode(void)
+uint32_t zynqmp_get_bootmode(void)
 {
 	uint32_t r;
 	unsigned int ret;
 
 	ret = pm_mmio_read(CRL_APB_BOOT_MODE_USER, &r);
 
-	if (ret != PM_RET_SUCCESS)
+	if (ret != PM_RET_SUCCESS) {
 		r = mmio_read_32(CRL_APB_BOOT_MODE_USER);
+	}
 
 	return r & CRL_APB_BOOT_MODE_MASK;
 }
@@ -369,12 +403,13 @@ void zynqmp_config_setup(void)
 	generic_delay_timer_init();
 }
 
-unsigned int plat_get_syscnt_freq2(void)
+uint32_t plat_get_syscnt_freq2(void)
 {
-	unsigned int ver = zynqmp_get_silicon_ver();
+	uint32_t ver = zynqmp_get_silicon_ver();
 
-	if (ver == ZYNQMP_CSU_VERSION_QEMU)
+	if (ver == ZYNQMP_CSU_VERSION_QEMU) {
 		return 65000000;
-	else
+	} else {
 		return mmio_read_32(IOU_SCNTRS_BASEFREQ);
+	}
 }

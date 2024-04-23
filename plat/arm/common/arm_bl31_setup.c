@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2024, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -13,9 +13,7 @@
 #include <drivers/console.h>
 #include <lib/debugfs.h>
 #include <lib/extensions/ras.h>
-#if ENABLE_RME
 #include <lib/gpt_rme/gpt_rme.h>
-#endif
 #include <lib/mmio.h>
 #include <lib/xlat_tables/xlat_tables_compat.h>
 #include <plat/arm/common/plat_arm.h>
@@ -45,6 +43,7 @@ CASSERT(BL31_BASE >= ARM_FW_CONFIG_LIMIT, assert_bl31_base_overflows);
 #pragma weak bl31_platform_setup
 #pragma weak bl31_plat_arch_setup
 #pragma weak bl31_plat_get_next_image_ep_info
+#pragma weak bl31_plat_runtime_setup
 
 #define MAP_BL31_TOTAL		MAP_REGION_FLAT(			\
 					BL31_START,			\
@@ -164,6 +163,14 @@ void __init arm_bl31_early_platform_setup(void *from_bl2, uintptr_t soc_fw_confi
 	bl33_image_ep_info.spsr = arm_get_spsr_for_bl33_entry();
 	SET_SECURITY_STATE(bl33_image_ep_info.h.attr, NON_SECURE);
 
+#if ENABLE_RME
+	/*
+	 * Populate entry point information for RMM.
+	 * Only PC needs to be set as other fields are determined by RMMD.
+	 */
+	rmm_image_ep_info.pc = RMM_BASE;
+#endif /* ENABLE_RME */
+
 #else /* RESET_TO_BL31 */
 
 	/*
@@ -191,6 +198,24 @@ void __init arm_bl31_early_platform_setup(void *from_bl2, uintptr_t soc_fw_confi
 	while (bl_params != NULL) {
 		if (bl_params->image_id == BL32_IMAGE_ID) {
 			bl32_image_ep_info = *bl_params->ep_info;
+#if SPMC_AT_EL3
+			/*
+			 * Populate the BL32 image base, size and max limit in
+			 * the entry point information, since there is no
+			 * platform function to retrieve them in generic
+			 * code. We choose arg2, arg3 and arg4 since the generic
+			 * code uses arg1 for stashing the SP manifest size. The
+			 * SPMC setup uses these arguments to update SP manifest
+			 * with actual SP's base address and it size.
+			 */
+			bl32_image_ep_info.args.arg2 =
+				bl_params->image_info->image_base;
+			bl32_image_ep_info.args.arg3 =
+				bl_params->image_info->image_size;
+			bl32_image_ep_info.args.arg4 =
+				bl_params->image_info->image_base +
+				bl_params->image_info->image_max_size;
+#endif
 		}
 #if ENABLE_RME
 		else if (bl_params->image_id == RMM_IMAGE_ID) {
@@ -288,7 +313,7 @@ void arm_bl31_platform_setup(void)
 	/* Initialize power controller before setting up topology */
 	plat_arm_pwrc_setup();
 
-#if RAS_EXTENSION
+#if ENABLE_FEAT_RAS && FFH_SUPPORT
 	ras_init();
 #endif
 
@@ -300,12 +325,9 @@ void arm_bl31_platform_setup(void)
 /*******************************************************************************
  * Perform any BL31 platform runtime setup prior to BL31 exit common to ARM
  * standard platforms
- * Perform BL31 platform setup
  ******************************************************************************/
 void arm_bl31_plat_runtime_setup(void)
 {
-	console_switch_state(CONSOLE_FLAG_RUNTIME);
-
 	/* Initialize the runtime console */
 	arm_console_runtime_init();
 
@@ -369,6 +391,9 @@ void __init bl31_platform_setup(void)
 void bl31_plat_runtime_setup(void)
 {
 	arm_bl31_plat_runtime_setup();
+
+	console_flush();
+	console_switch_state(CONSOLE_FLAG_RUNTIME);
 }
 
 /*******************************************************************************

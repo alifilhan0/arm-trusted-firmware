@@ -5,10 +5,12 @@ Measured Boot is the process of cryptographically measuring the code and
 critical data used at boot time, for example using a TPM, so that the
 security state can be attested later.
 
-The current implementation of the driver included in Trusted Firmware-A
-(TF-A) stores the measurements into a `TGC event log`_ in secure
-memory. No other means of recording measurements (such as a discrete TPM) is
-supported right now.
+The current implementation of the driver included in |TF-A| supports several
+backends and each has a different means to store the measurements.
+This section focuses on the `TCG event log`_ backend, which stores measurements
+in secure memory.
+
+See details of :ref:`Measured Boot Design`.
 
 The driver also provides mechanisms to pass the Event Log to normal world if
 needed.
@@ -24,7 +26,7 @@ a firmware TPM (fTPM) service implemented on top of OP-TEE.
    platforms might have different needs and configurations (e.g. different
    SHA algorithms) and they might also use different types of TPM services
    (or even a different type of service to provide the attestation)
-   and therefore the instuctions given here might not apply in such scenarios.
+   and therefore the instructions given here might not apply in such scenarios.
 
 Components
 ~~~~~~~~~~
@@ -135,11 +137,11 @@ the following steps should suffice:
 
 (4) Now, you should be able to continue with step 5 in "`Get and build the solution`_"
     instructions. In order to enable support for Measured Boot, you need to
-    set the ``MEASURED_BOOT`` build option:
+    set the following build options:
 
     .. code:: shell
 
-       $ MEASURED_BOOT=y make -j `nproc`
+       $ MEASURED_BOOT=y MEASURED_BOOT_FTPM=y make -j `nproc`
 
     .. note::
        The build process will likely take a long time. It is strongly recommended to
@@ -497,11 +499,11 @@ The most relevant options for Measured Boot support are:
 
 --------------
 
-*Copyright (c) 2021, Arm Limited. All rights reserved.*
+*Copyright (c) 2021-2023, Arm Limited. All rights reserved.*
 
 .. _OP-TEE Toolkit: https://github.com/OP-TEE/build
 .. _ms-tpm-20-ref: https://github.com/microsoft/ms-tpm-20-ref
 .. _Get and build the solution: https://optee.readthedocs.io/en/latest/building/gits/build.html#get-and-build-the-solution
 .. _Armv8-A Foundation Platform (For Linux Hosts Only): https://developer.arm.com/tools-and-software/simulation-models/fixed-virtual-platforms/arm-ecosystem-models
 .. _tpm2-tools: https://github.com/tpm2-software/tpm2-tools
-.. _TGC event log: https://trustedcomputinggroup.org/resource/tcg-efi-platform-specification/
+.. _TCG event log: https://trustedcomputinggroup.org/resource/tcg-efi-platform-specification/

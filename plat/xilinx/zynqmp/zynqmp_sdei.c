@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2017-2020, Arm Limited and Contributors. All rights reserved.
  * Copyright (c) Siemens AG, 2020-2021
  *
  * SPDX-License-Identifier: BSD-3-Clause
@@ -9,14 +9,17 @@
 
 #include <bl31/ehf.h>
 #include <common/debug.h>
+#include <plat/common/platform.h>
 #include <services/sdei.h>
 
-#include <plat/common/platform.h>
 #include <platform_def.h>
 
 int arm_validate_ns_entrypoint(uintptr_t entrypoint)
 {
-	return (entrypoint < BL31_BASE || entrypoint > BL31_LIMIT) ? 0 : -1;
+	uint64_t base = BL31_BASE;
+	uint64_t limit = BL31_LIMIT;
+
+	return (entrypoint < base || entrypoint > limit) ? 0 : -1;
 }
 
 /* Private event mappings */

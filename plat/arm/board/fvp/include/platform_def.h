@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2014-2024, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -16,6 +16,10 @@
 
 #include "../fvp_def.h"
 
+#if TRUSTED_BOARD_BOOT
+#include MBEDTLS_CONFIG_FILE
+#endif
+
 /* Required platform porting definitions */
 #define PLATFORM_CORE_COUNT  (U(FVP_CLUSTER_COUNT) * \
 			      U(FVP_MAX_CPUS_PER_CLUSTER) * \
@@ -26,6 +30,10 @@
 
 #define PLAT_MAX_PWR_LVL		ARM_PWR_LVL2
 
+#if PSCI_OS_INIT_MODE
+#define PLAT_MAX_CPU_SUSPEND_PWR_LVL	ARM_PWR_LVL1
+#endif
+
 /*
  * Other platform porting definitions are provided by included headers
  */
@@ -35,7 +43,7 @@
  */
 #define PLAT_ARM_CLUSTER_COUNT		U(FVP_CLUSTER_COUNT)
 
-#define PLAT_ARM_TRUSTED_SRAM_SIZE	UL(0x00040000)	/* 256 KB */
+#define PLAT_ARM_TRUSTED_SRAM_SIZE	(FVP_TRUSTED_SRAM_SIZE * UL(1024))
 
 #define PLAT_ARM_TRUSTED_ROM_BASE	UL(0x00000000)
 #define PLAT_ARM_TRUSTED_ROM_SIZE	UL(0x04000000)	/* 64 MB */
@@ -63,8 +71,24 @@
 /* No SCP in FVP */
 #define PLAT_ARM_SCP_TZC_DRAM1_SIZE	UL(0x0)
 
-#define PLAT_ARM_DRAM2_BASE		ULL(0x880000000)
-#define PLAT_ARM_DRAM2_SIZE		UL(0x80000000)
+#define PLAT_ARM_DRAM2_BASE	ULL(0x880000000) /* 36-bit range */
+#define PLAT_ARM_DRAM2_SIZE	ULL(0x780000000) /* 30 GB */
+
+#define FVP_DRAM3_BASE	ULL(0x8800000000) /* 40-bit range */
+#define FVP_DRAM3_SIZE	ULL(0x7800000000) /* 480 GB */
+#define FVP_DRAM3_END	(FVP_DRAM3_BASE + FVP_DRAM3_SIZE - 1U)
+
+#define FVP_DRAM4_BASE	ULL(0x88000000000) /* 44-bit range */
+#define FVP_DRAM4_SIZE	ULL(0x78000000000) /* 7.5 TB */
+#define FVP_DRAM4_END	(FVP_DRAM4_BASE + FVP_DRAM4_SIZE - 1U)
+
+#define FVP_DRAM5_BASE	ULL(0x880000000000) /* 48-bit range */
+#define FVP_DRAM5_SIZE	ULL(0x780000000000) /* 120 TB */
+#define FVP_DRAM5_END	(FVP_DRAM5_BASE + FVP_DRAM5_SIZE - 1U)
+
+#define FVP_DRAM6_BASE	ULL(0x8800000000000) /* 52-bit range */
+#define FVP_DRAM6_SIZE	ULL(0x7800000000000) /* 1920 TB */
+#define FVP_DRAM6_END	(FVP_DRAM6_BASE + FVP_DRAM6_SIZE - 1U)
 
 /* Range of kernel DTB load address */
 #define FVP_DTB_DRAM_MAP_START		ULL(0x82000000)
@@ -74,10 +98,54 @@
 					FVP_DTB_DRAM_MAP_START,		\
 					FVP_DTB_DRAM_MAP_SIZE,		\
 					MT_MEMORY | MT_RO | MT_NS)
+
+/*
+ * On the FVP platform when using the EL3 SPMC implementation allocate the
+ * datastore for tracking shared memory descriptors in the TZC DRAM section
+ * to ensure sufficient storage can be allocated.
+ * Provide an implementation of the accessor method to allow the datastore
+ * details to be retrieved by the SPMC.
+ * The SPMC will take care of initializing the memory region.
+ */
+
+#define PLAT_SPMC_SHMEM_DATASTORE_SIZE 512 * 1024
+
+/* Define memory configuration for device tree files. */
+#define PLAT_ARM_HW_CONFIG_SIZE			U(0x4000)
+
+#if SPMC_AT_EL3
+/*
+ * Number of Secure Partitions supported.
+ * SPMC at EL3, uses this count to configure the maximum number of supported
+ * secure partitions.
+ */
+#define SECURE_PARTITION_COUNT		1
+
+/*
+ * Number of Normal World Partitions supported.
+ * SPMC at EL3, uses this count to configure the maximum number of supported
+ * NWd partitions.
+ */
+#define NS_PARTITION_COUNT		1
+
+/*
+ * Number of Logical Partitions supported.
+ * SPMC at EL3, uses this count to configure the maximum number of supported
+ * logical partitions.
+ */
+#define MAX_EL3_LP_DESCS_COUNT		1
+
+#endif /* SPMC_AT_EL3 */
+
 /*
  * Load address of BL33 for this platform port
  */
 #define PLAT_ARM_NS_IMAGE_BASE		(ARM_DRAM1_BASE + UL(0x8000000))
+
+#if TRANSFER_LIST
+#define FW_HANDOFF_SIZE			0x4000
+#define FW_NS_HANDOFF_BASE		(PLAT_ARM_NS_IMAGE_BASE - FW_HANDOFF_SIZE)
+#endif
 
 /*
  * PLAT_ARM_MMAP_ENTRIES depends on the number of entries in the
@@ -86,13 +154,12 @@
 #if defined(IMAGE_BL31)
 # if SPM_MM
 #  define PLAT_ARM_MMAP_ENTRIES		10
-#  if ENABLE_RME
-#   define MAX_XLAT_TABLES		10
-#  else
-#   define MAX_XLAT_TABLES		9
-# endif
+#  define MAX_XLAT_TABLES		9
 #  define PLAT_SP_IMAGE_MMAP_REGIONS	30
 #  define PLAT_SP_IMAGE_MAX_XLAT_TABLES	10
+# elif SPMC_AT_EL3
+#  define PLAT_ARM_MMAP_ENTRIES		13
+#  define MAX_XLAT_TABLES		11
 # else
 #  define PLAT_ARM_MMAP_ENTRIES		9
 #  if USE_DEBUGFS
@@ -104,27 +171,50 @@
 #  else
 #   if ENABLE_RME
 #    define MAX_XLAT_TABLES		8
+#   elif DRTM_SUPPORT
+#    define MAX_XLAT_TABLES		8
 #   else
 #    define MAX_XLAT_TABLES		7
 #   endif
 #  endif
 # endif
 #elif defined(IMAGE_BL32)
-# define PLAT_ARM_MMAP_ENTRIES		9
-# define MAX_XLAT_TABLES		6
+# if SPMC_AT_EL3
+#  define PLAT_ARM_MMAP_ENTRIES		270
+#  define MAX_XLAT_TABLES		10
+# else
+#  define PLAT_ARM_MMAP_ENTRIES		9
+#  define MAX_XLAT_TABLES		6
+# endif
 #elif !USE_ROMLIB
-# define PLAT_ARM_MMAP_ENTRIES		11
-# define MAX_XLAT_TABLES		5
+# if ENABLE_RME && defined(IMAGE_BL2)
+#  define PLAT_ARM_MMAP_ENTRIES		12
+#  define MAX_XLAT_TABLES		6
+# else
+#  define PLAT_ARM_MMAP_ENTRIES		11
+#  define MAX_XLAT_TABLES		5
+# endif /* (IMAGE_BL2 && ENABLE_RME) */
 #else
 # define PLAT_ARM_MMAP_ENTRIES		12
-# define MAX_XLAT_TABLES		6
+# if (defined(SPD_tspd) || defined(SPD_opteed) || defined(SPD_spmd)) && \
+defined(IMAGE_BL2) && MEASURED_BOOT
+#  define MAX_XLAT_TABLES		7
+# else
+#  define MAX_XLAT_TABLES		6
+# endif /* (SPD_tspd || SPD_opteed || SPD_spmd) && IMAGE_BL2 && MEASURED_BOOT */
 #endif
 
 /*
  * PLAT_ARM_MAX_BL1_RW_SIZE is calculated using the current BL1 RW debug size
  * plus a little space for growth.
+ * In case of PSA Crypto API, few algorithms like ECDSA needs bigger BL1 RW
+ * area.
  */
+#if TF_MBEDTLS_KEY_ALG_ID == TF_MBEDTLS_RSA_AND_ECDSA || PSA_CRYPTO
+#define PLAT_ARM_MAX_BL1_RW_SIZE	UL(0xC000)
+#else
 #define PLAT_ARM_MAX_BL1_RW_SIZE	UL(0xB000)
+#endif
 
 /*
  * PLAT_ARM_MAX_ROMLIB_RW_SIZE is define to use a full page
@@ -141,17 +231,30 @@
 #endif
 
 /*
- * PLAT_ARM_MAX_BL2_SIZE is calculated using the current BL2 debug size plus a
- * little space for growth.
+ * Set the maximum size of BL2 to be close to half of the Trusted SRAM.
+ * Maximum size of BL2 increases as Trusted SRAM size increases.
  */
-#if TRUSTED_BOARD_BOOT
-#if COT_DESC_IN_DTB
-# define PLAT_ARM_MAX_BL2_SIZE	(UL(0x1E000) - FVP_BL2_ROMLIB_OPTIMIZATION)
+#if CRYPTO_SUPPORT
+#if (TF_MBEDTLS_KEY_ALG_ID == TF_MBEDTLS_RSA_AND_ECDSA) || COT_DESC_IN_DTB
+# define PLAT_ARM_MAX_BL2_SIZE	((PLAT_ARM_TRUSTED_SRAM_SIZE / 2) - \
+				 (2 * PAGE_SIZE) - \
+				 FVP_BL2_ROMLIB_OPTIMIZATION)
 #else
-# define PLAT_ARM_MAX_BL2_SIZE	(UL(0x1D000) - FVP_BL2_ROMLIB_OPTIMIZATION)
+# define PLAT_ARM_MAX_BL2_SIZE	((PLAT_ARM_TRUSTED_SRAM_SIZE / 2) - \
+				 (3 * PAGE_SIZE) - \
+				 FVP_BL2_ROMLIB_OPTIMIZATION)
 #endif
+#elif ARM_BL31_IN_DRAM
+/* When ARM_BL31_IN_DRAM is set, BL2 can use almost all of Trusted SRAM. */
+# define PLAT_ARM_MAX_BL2_SIZE	(UL(0x1F000) - FVP_BL2_ROMLIB_OPTIMIZATION)
 #else
-# define PLAT_ARM_MAX_BL2_SIZE	(UL(0x13000) - FVP_BL2_ROMLIB_OPTIMIZATION)
+/**
+ * Default to just under half of SRAM to ensure there's enough room for really
+ * large BL31 build configurations when using the default SRAM size (256 Kb).
+ */
+#define PLAT_ARM_MAX_BL2_SIZE                                               \
+	(((PLAT_ARM_TRUSTED_SRAM_SIZE / 3) & ~PAGE_SIZE_MASK) - PAGE_SIZE - \
+	 FVP_BL2_ROMLIB_OPTIMIZATION)
 #endif
 
 #if RESET_TO_BL31
@@ -163,9 +266,12 @@
 /*
  * Since BL31 NOBITS overlays BL2 and BL1-RW, PLAT_ARM_MAX_BL31_SIZE is
  * calculated using the current BL31 PROGBITS debug size plus the sizes of
- * BL2 and BL1-RW
+ * BL2 and BL1-RW.
+ * Size of the BL31 PROGBITS increases as the SRAM size increases.
  */
-#define PLAT_ARM_MAX_BL31_SIZE		(UL(0x3D000) - ARM_L0_GPT_SIZE)
+#define PLAT_ARM_MAX_BL31_SIZE		(PLAT_ARM_TRUSTED_SRAM_SIZE - \
+					 ARM_SHARED_RAM_SIZE - \
+					 ARM_FW_CONFIGS_SIZE - ARM_L0_GPT_SIZE)
 #endif /* RESET_TO_BL31 */
 
 #ifndef __aarch64__
@@ -187,23 +293,31 @@
  * Size of cacheable stacks
  */
 #if defined(IMAGE_BL1)
-# if TRUSTED_BOARD_BOOT
+# if CRYPTO_SUPPORT
 #  define PLATFORM_STACK_SIZE		UL(0x1000)
 # else
 #  define PLATFORM_STACK_SIZE		UL(0x500)
-# endif
+# endif /* CRYPTO_SUPPORT */
 #elif defined(IMAGE_BL2)
-# if TRUSTED_BOARD_BOOT
+# if CRYPTO_SUPPORT
 #  define PLATFORM_STACK_SIZE		UL(0x1000)
 # else
 #  define PLATFORM_STACK_SIZE		UL(0x600)
-# endif
+# endif /* CRYPTO_SUPPORT */
 #elif defined(IMAGE_BL2U)
 # define PLATFORM_STACK_SIZE		UL(0x400)
 #elif defined(IMAGE_BL31)
+# if DRTM_SUPPORT
+#  define PLATFORM_STACK_SIZE		UL(0x1000)
+# else
 #  define PLATFORM_STACK_SIZE		UL(0x800)
+# endif /* DRTM_SUPPORT */
 #elif defined(IMAGE_BL32)
-# define PLATFORM_STACK_SIZE		UL(0x440)
+# if SPMC_AT_EL3
+#  define PLATFORM_STACK_SIZE		UL(0x1000)
+# else
+#  define PLATFORM_STACK_SIZE		UL(0x440)
+# endif /* SPMC_AT_EL3 */
 #elif defined(IMAGE_RMM)
 # define PLATFORM_STACK_SIZE		UL(0x440)
 #endif
@@ -247,6 +361,7 @@
 #define PLAT_ARM_TRP_UART_CLK_IN_HZ	V2M_IOFPGA_UART3_CLK_IN_HZ
 
 #define PLAT_FVP_SMMUV3_BASE		UL(0x2b400000)
+#define PLAT_ARM_SMMUV3_ROOT_REG_OFFSET UL(0x20000)
 
 /* CCI related constants */
 #define PLAT_FVP_CCI400_BASE		UL(0x2c090000)
@@ -321,14 +436,24 @@
 #define PLAT_SDEI_DP_EVENT_MAX_CNT	ARM_SDEI_DP_EVENT_MAX_CNT
 #define PLAT_SDEI_DS_EVENT_MAX_CNT	ARM_SDEI_DS_EVENT_MAX_CNT
 #else
-#define PLAT_ARM_PRIVATE_SDEI_EVENTS	ARM_SDEI_PRIVATE_EVENTS
+  #if PLATFORM_TEST_RAS_FFH || PLATFORM_TEST_FFH_LSP_RAS_SP
+  #define PLAT_ARM_PRIVATE_SDEI_EVENTS \
+	ARM_SDEI_PRIVATE_EVENTS, \
+	SDEI_EXPLICIT_EVENT(5000, SDEI_MAPF_NORMAL), \
+	SDEI_EXPLICIT_EVENT(5001, SDEI_MAPF_NORMAL), \
+	SDEI_EXPLICIT_EVENT(5002, SDEI_MAPF_NORMAL), \
+	SDEI_EXPLICIT_EVENT(5003, SDEI_MAPF_CRITICAL), \
+	SDEI_EXPLICIT_EVENT(5004, SDEI_MAPF_CRITICAL)
+  #else
+  #define PLAT_ARM_PRIVATE_SDEI_EVENTS	ARM_SDEI_PRIVATE_EVENTS
+  #endif
 #define PLAT_ARM_SHARED_SDEI_EVENTS	ARM_SDEI_SHARED_EVENTS
 #endif
 
 #define PLAT_ARM_SP_IMAGE_STACK_BASE	(PLAT_SP_IMAGE_NS_BUF_BASE +	\
 					 PLAT_SP_IMAGE_NS_BUF_SIZE)
 
-#define PLAT_SP_PRI			PLAT_RAS_PRI
+#define PLAT_SP_PRI			0x20
 
 /*
  * Physical and virtual address space limits for MMU in AARCH64 & AARCH32 modes
@@ -344,6 +469,21 @@
 /*
  * Maximum size of Event Log buffer used in Measured Boot Event Log driver
  */
+#if ENABLE_RME && (defined(SPD_tspd) || defined(SPD_opteed) || defined(SPD_spmd))
+/* Account for additional measurements of secure partitions and SPM. */
+#define	PLAT_ARM_EVENT_LOG_MAX_SIZE		UL(0x800)
+#else
 #define	PLAT_ARM_EVENT_LOG_MAX_SIZE		UL(0x400)
+#endif
+
+/*
+ * Maximum size of Event Log buffer used for DRTM
+ */
+#define PLAT_DRTM_EVENT_LOG_MAX_SIZE		UL(0x300)
+
+/*
+ * Number of MMAP entries used by DRTM implementation
+ */
+#define PLAT_DRTM_MMAP_ENTRIES			PLAT_ARM_MMAP_ENTRIES
 
 #endif /* PLATFORM_DEF_H */

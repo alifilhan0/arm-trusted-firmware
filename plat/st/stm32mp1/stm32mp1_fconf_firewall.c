@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2021-2022, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -31,8 +31,13 @@ struct dt_id_attr {
 
 void stm32mp1_arch_security_setup(void)
 {
+#if STM32MP13
+	clk_enable(TZC);
+#endif
+#if STM32MP15
 	clk_enable(TZC1);
 	clk_enable(TZC2);
+#endif
 
 	tzc400_init(STM32MP1_TZC_BASE);
 	tzc400_disable_filters();
@@ -94,15 +99,16 @@ static int fconf_populate_stm32mp1_firewall(uintptr_t config)
 
 	/* Locate the memory cells and read all values */
 	for (i = 0U; i < (unsigned int)(len / (sizeof(uint32_t) * STM32MP_REGION_PARAMS)); i++) {
+		uint32_t idx = i * STM32MP_REGION_PARAMS;
 		uint32_t base;
 		uint32_t size;
 		uint32_t sec_attr;
 		uint32_t nsaid;
 
-		base = fdt32_to_cpu(conf_list->id_attr[i * STM32MP_REGION_PARAMS]);
-		size = fdt32_to_cpu(conf_list->id_attr[i * STM32MP_REGION_PARAMS + 1]);
-		sec_attr = fdt32_to_cpu(conf_list->id_attr[i * STM32MP_REGION_PARAMS + 2]);
-		nsaid = fdt32_to_cpu(conf_list->id_attr[i * STM32MP_REGION_PARAMS + 3]);
+		base = fdt32_to_cpu(conf_list->id_attr[idx]);
+		size = fdt32_to_cpu(conf_list->id_attr[idx + 1]);
+		sec_attr = fdt32_to_cpu(conf_list->id_attr[idx + 2]);
+		nsaid = fdt32_to_cpu(conf_list->id_attr[idx + 3]);
 
 		VERBOSE("FCONF: stm32mp1-firewall cell found with value = 0x%x 0x%x 0x%x 0x%x\n",
 			base, size, sec_attr, nsaid);

@@ -25,62 +25,302 @@ x Cortex-A57 clusters running at the following frequencies:
 Juno supports CPU, cluster and system power down states, corresponding to power
 levels 0, 1 and 2 respectively. It does not support any retention states.
 
-We used the upstream `TF master as of 31/01/2017`_, building the platform using
-the ``ENABLE_RUNTIME_INSTRUMENTATION`` option:
+Given that runtime instrumentation using PMF is invasive, there is a small
+(unquantified) overhead on the results. PMF uses the generic counter for
+timestamps, which runs at 50MHz on Juno.
 
-.. code:: shell
+The following source trees and binaries were used:
 
-    make PLAT=juno ENABLE_RUNTIME_INSTRUMENTATION=1 \
-        SCP_BL2=<path/to/scp-fw.bin>                \
-        BL33=<path/to/test-fw.bin>                  \
-        all fip
+- TF-A [`v2.9-rc0`_]
+- TFTF [`v2.9-rc0`_]
 
-When using the debug build of TF, there was no noticeable difference in the
-results.
+Please see the Runtime Instrumentation :ref:`Testing Methodology
+<Runtime Instrumentation Methodology>`
+page for more details.
 
-The tests are based on an ARM-internal test framework. The release build of this
-framework was used because the results in the debug build became skewed; the
-console output prevented some of the tests from executing in parallel.
+Procedure
+---------
 
-The tests consist of both parallel and sequential tests, which are broadly
-described as follows:
+#. Build TFTF with runtime instrumentation enabled:
 
-- **Parallel Tests** This type of test powers on all the non-lead CPUs and
-  brings them and the lead CPU to a common synchronization point.  The lead CPU
-  then initiates the test on all CPUs in parallel.
+    .. code:: shell
 
-- **Sequential Tests** This type of test powers on each non-lead CPU in
-  sequence. The lead CPU initiates the test on a non-lead CPU then waits for the
-  test to complete before proceeding to the next non-lead CPU. The lead CPU then
-  executes the test on itself.
+        make CROSS_COMPILE=aarch64-none-elf- PLAT=juno \
+            TESTS=runtime-instrumentation all
+
+#. Fetch Juno's SCP binary from TF-A's archive:
+
+    .. code:: shell
+
+        curl --fail --connect-timeout 5 --retry 5 -sLS -o scp_bl2.bin \
+            https://downloads.trustedfirmware.org/tf-a/css_scp_2.12.0/juno/release/juno-bl2.bin
+
+#. Build TF-A with the following build options:
+
+    .. code:: shell
+
+        make CROSS_COMPILE=aarch64-none-elf- PLAT=juno \
+            BL33="/path/to/tftf.bin" SCP_BL2="scp_bl2.bin" \
+            ENABLE_RUNTIME_INSTRUMENTATION=1 fiptool all fip
+
+#. Load the following images onto the development board: ``fip.bin``,
+   ``scp_bl2.bin``.
+
+Results
+-------
+
+``CPU_SUSPEND`` to deepest power level
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. table:: ``CPU_SUSPEND`` latencies (µs) to deepest power level in
+        parallel (v2.9)
+
+    +---------+------+-----------+--------+-------------+
+    | Cluster | Core | Powerdown | Wakeup | Cache Flush |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  0   |   104.58  | 241.20 |     5.26    |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  1   |   384.24  | 22.50  |    138.76   |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  0   |   244.56  | 22.18  |     5.16    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  1   |   670.56  | 18.58  |     4.44    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  2   |   809.36  | 269.28 |     4.44    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  3   |   984.96  | 219.70 |    79.62    |
+    +---------+------+-----------+--------+-------------+
+
+.. table:: ``CPU_SUSPEND`` latencies (µs) to deepest power level in
+        parallel (v2.10)
+
+    +---------+------+-------------------+--------+-------------+
+    | Cluster | Core |     Powerdown     | Wakeup | Cache Flush |
+    +---------+------+-------------------+--------+-------------+
+    |    0    |  0   | 242.66 (+132.03%) | 245.1  |     5.4     |
+    +---------+------+-------------------+--------+-------------+
+    |    0    |  1   |  522.08 (+35.87%) | 26.24  |    138.32   |
+    +---------+------+-------------------+--------+-------------+
+    |    1    |  0   |  104.36 (-57.33%) |  27.1  |     5.32    |
+    +---------+------+-------------------+--------+-------------+
+    |    1    |  1   |  382.56 (-42.95%) | 23.34  |     4.42    |
+    +---------+------+-------------------+--------+-------------+
+    |    1    |  2   |       807.74      | 271.54 |     4.64    |
+    +---------+------+-------------------+--------+-------------+
+    |    1    |  3   |       981.36      | 221.8  |    79.48    |
+    +---------+------+-------------------+--------+-------------+
+
+.. table:: ``CPU_SUSPEND`` latencies (µs) to deepest power level in
+        serial (v2.9)
+
+    +---------+------+-----------+--------+-------------+
+    | Cluster | Core | Powerdown | Wakeup | Cache Flush |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  0   |   236.56  | 23.24  |    138.18   |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  1   |   236.86  | 23.28  |    138.10   |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  0   |   281.04  | 22.80  |    77.24    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  1   |   100.28  | 18.52  |     4.54    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  2   |   100.12  | 18.78  |     4.50    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  3   |   100.36  | 18.94  |     4.44    |
+    +---------+------+-----------+--------+-------------+
+
+.. table:: ``CPU_SUSPEND`` latencies (µs) to deepest power level in
+        serial (v2.10)
+
+    +---------+------+-----------+--------+-------------+
+    | Cluster | Core | Powerdown | Wakeup | Cache Flush |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  0   |   236.84  |  27.1  |    138.36   |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  1   |   236.96  |  27.1  |    138.32   |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  0   |   280.06  | 26.94  |     77.5    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  1   |   100.76  | 23.42  |     4.36    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  2   |   100.02  | 23.42  |     4.44    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  3   |   100.08  |  23.2  |     4.4     |
+    +---------+------+-----------+--------+-------------+
+
+``CPU_SUSPEND`` to power level 0
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. table:: ``CPU_SUSPEND`` latencies (µs) to power level 0 in
+        parallel (v2.9)
+
+    +---------+------+-----------+--------+-------------+
+    | Cluster | Core | Powerdown | Wakeup | Cache Flush |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  0   |   662.34  | 15.22  |     8.08    |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  1   |   802.00  | 15.50  |     8.16    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  0   |   385.22  | 15.74  |     7.88    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  1   |   106.16  | 16.06  |     7.44    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  2   |   524.38  | 15.64  |     7.34    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  3   |   246.00  | 15.78  |     7.72    |
+    +---------+------+-----------+--------+-------------+
+
+.. table:: ``CPU_SUSPEND`` latencies (µs) to power level 0 in
+        parallel (v2.10)
+
+    +---------+------+-------------------+--------+-------------+
+    | Cluster | Core |     Powerdown     | Wakeup | Cache Flush |
+    +---------+------+-------------------+--------+-------------+
+    |    0    |  0   |       801.04      | 18.66  |     8.22    |
+    +---------+------+-------------------+--------+-------------+
+    |    0    |  1   |       661.28      | 19.08  |     7.88    |
+    +---------+------+-------------------+--------+-------------+
+    |    1    |  0   |  105.9 (-72.51%)  |  20.3  |     7.58    |
+    +---------+------+-------------------+--------+-------------+
+    |    1    |  1   | 383.58 (+261.32%) |  20.4  |     7.42    |
+    +---------+------+-------------------+--------+-------------+
+    |    1    |  2   |       523.52      |  20.1  |     7.74    |
+    +---------+------+-------------------+--------+-------------+
+    |    1    |  3   |       244.5       | 20.16  |     7.56    |
+    +---------+------+-------------------+--------+-------------+
+
+.. table:: ``CPU_SUSPEND`` latencies (µs) to power level 0 in serial (v2.9)
+
+    +---------+------+-----------+--------+-------------+
+    | Cluster | Core | Powerdown | Wakeup | Cache Flush |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  0   |   99.80   | 15.94  |     5.42    |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  1   |   99.76   | 15.80  |     5.24    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  0   |   278.26  | 16.16  |     4.58    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  1   |   96.88   | 16.00  |     4.52    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  2   |   96.80   | 16.12  |     4.54    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  3   |   96.88   | 16.12  |     4.54    |
+    +---------+------+-----------+--------+-------------+
+
+.. table:: ``CPU_SUSPEND`` latencies (µs) to power level 0 in serial (v2.10)
+
+    +---------+------+-----------+--------+-------------+
+    | Cluster | Core | Powerdown | Wakeup | Cache Flush |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  0   |   99.84   | 18.86  |     5.54    |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  1   |   100.2   | 18.82  |     5.66    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  0   |   278.12  | 20.56  |     4.48    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  1   |   96.68   | 20.62  |     4.3     |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  2   |   96.94   | 20.14  |     4.42    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  3   |   96.68   | 20.46  |     4.32    |
+    +---------+------+-----------+--------+-------------+
+
+``CPU_OFF`` on all non-lead CPUs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``CPU_OFF`` on all non-lead CPUs in sequence then, ``CPU_SUSPEND`` on the lead
+core to the deepest power level.
+
+.. table:: ``CPU_OFF`` latencies (µs) on all non-lead CPUs (v2.9)
+
+    +---------+------+-----------+--------+-------------+
+    | Cluster | Core | Powerdown | Wakeup | Cache Flush |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  0   |   235.76  | 26.14  |    137.80   |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  1   |   235.40  | 25.72  |    137.62   |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  0   |   174.70  | 22.40  |    77.26    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  1   |   100.92  | 24.04  |     4.52    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  2   |   100.68  | 22.44  |     4.36    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  3   |   101.36  | 22.70  |     4.52    |
+    +---------+------+-----------+--------+-------------+
+
+.. table:: ``CPU_OFF`` latencies (µs) on all non-lead CPUs (v2.10)
+
+    +---------------------------------------------------+
+    |       test_rt_instr_cpu_off_serial (latest)       |
+    +---------+------+-----------+--------+-------------+
+    | Cluster | Core | Powerdown | Wakeup | Cache Flush |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  0   |   236.04  | 30.02  |    137.9    |
+    +---------+------+-----------+--------+-------------+
+    |    0    |  1   |   235.38  |  29.7  |    137.72   |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  0   |   175.18  | 26.96  |    77.26    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  1   |   100.56  | 28.34  |     4.32    |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  2   |   100.38  | 26.82  |     4.3     |
+    +---------+------+-----------+--------+-------------+
+    |    1    |  3   |   100.86  | 26.98  |     4.42    |
+    +---------+------+-----------+--------+-------------+
+
+``CPU_VERSION`` in parallel
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. table:: ``CPU_VERSION`` latency (µs) in parallel on all cores (2.9)
+
+    +-------------+--------+-------------+
+    |   Cluster   |  Core  |   Latency   |
+    +-------------+--------+-------------+
+    |      0      |   0    |     1.48    |
+    +-------------+--------+-------------+
+    |      0      |   1    |     1.04    |
+    +-------------+--------+-------------+
+    |      1      |   0    |     0.56    |
+    +-------------+--------+-------------+
+    |      1      |   1    |     0.92    |
+    +-------------+--------+-------------+
+    |      1      |   2    |     0.96    |
+    +-------------+--------+-------------+
+    |      1      |   3    |     0.96    |
+    +-------------+--------+-------------+
+
+.. table:: ``CPU_VERSION`` latency (µs) in parallel on all cores (2.10)
+
+    +-------------+--------+----------------------+
+    |   Cluster   |  Core  |       Latency        |
+    +-------------+--------+----------------------+
+    |      0      |   0    |    1.1 (-25.68%)     |
+    +-------------+--------+----------------------+
+    |      0      |   1    |         1.06         |
+    +-------------+--------+----------------------+
+    |      1      |   0    |         0.58         |
+    +-------------+--------+----------------------+
+    |      1      |   1    |         0.88         |
+    +-------------+--------+----------------------+
+    |      1      |   2    |         0.92         |
+    +-------------+--------+----------------------+
+    |      1      |   3    |         0.9          |
+    +-------------+--------+----------------------+
+
+Annotated Historic Results
+--------------------------
+
+The following results are based on the upstream `TF master as of 31/01/2017`_.
+TF-A was built using the same build instructions as detailed in the procedure
+above.
 
 In the results below, CPUs 0-3 refer to CPUs in the little cluster (A53) and
 CPUs 4-5 refer to CPUs in the big cluster (A57). In all cases CPU 4 is the lead
 CPU.
 
-``PSCI_ENTRY`` refers to the time taken from entering the TF PSCI implementation
-to the point the hardware enters the low power state (WFI). Referring to the TF
-runtime instrumentation points, this corresponds to:
-``(RT_INSTR_ENTER_HW_LOW_PWR - RT_INSTR_ENTER_PSCI)``.
-
-``PSCI_EXIT`` refers to the time taken from the point the hardware exits the low
-power state to exiting the TF PSCI implementation. This corresponds to:
-``(RT_INSTR_EXIT_PSCI - RT_INSTR_EXIT_HW_LOW_PWR)``.
-
-``CFLUSH_OVERHEAD`` refers to the part of ``PSCI_ENTRY`` taken to flush the
-caches. This corresponds to: ``(RT_INSTR_EXIT_CFLUSH - RT_INSTR_ENTER_CFLUSH)``.
-
-Note there is very little variance observed in the values given (~1us), although
-the values for each CPU are sometimes interchanged, depending on the order in
-which locks are acquired. Also, there is very little variance observed between
-executing the tests sequentially in a single boot or rebooting between tests.
-
-Given that runtime instrumentation using PMF is invasive, there is a small
-(unquantified) overhead on the results. PMF uses the generic counter for
-timestamps, which runs at 50MHz on Juno.
-
-Results and Commentary
-----------------------
+``PSCI_ENTRY`` corresponds to the powerdown latency, ``PSCI_EXIT`` the wakeup latency, and
+``CFLUSH_OVERHEAD`` the latency of the cache flush operation.
 
 ``CPU_SUSPEND`` to deepest power level on all CPUs in parallel
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -286,7 +526,8 @@ effects, given that these measurements are at the nano-second level.
 
 --------------
 
-*Copyright (c) 2019-2020, Arm Limited and Contributors. All rights reserved.*
+*Copyright (c) 2019-2023, Arm Limited and Contributors. All rights reserved.*
 
-.. _Juno R1 platform: https://static.docs.arm.com/100122/0100/arm_versatile_express_juno_r1_development_platform_(v2m_juno_r1)_technical_reference_manual_100122_0100_05_en.pdf
+.. _Juno R1 platform: https://developer.arm.com/documentation/100122/latest/
 .. _TF master as of 31/01/2017: https://git.trustedfirmware.org/TF-A/trusted-firmware-a.git/tree/?id=c38b36d
+.. _v2.9-rc0: https://git.trustedfirmware.org/TF-A/trusted-firmware-a.git/tree/?h=v2.9-rc0

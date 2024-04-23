@@ -5,7 +5,7 @@
  * The system works in a message response protocol
  * See: http://processors.wiki.ti.com/index.php/TISCI for details
  *
- * Copyright (C) 2018 Texas Instruments Incorporated - http://www.ti.com/
+ * Copyright (C) 2018-2022 Texas Instruments Incorporated - https://www.ti.com/
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -22,11 +22,15 @@
 #define TI_SCI_MSG_WAKE_REASON		0x0003
 #define TI_SCI_MSG_GOODBYE		0x0004
 #define TI_SCI_MSG_SYS_RESET		0x0005
+#define TI_SCI_MSG_QUERY_FW_CAPS	0x0022
 
 /* Device requests */
 #define TI_SCI_MSG_SET_DEVICE_STATE	0x0200
 #define TI_SCI_MSG_GET_DEVICE_STATE	0x0201
 #define TI_SCI_MSG_SET_DEVICE_RESETS	0x0202
+
+/* Low Power Mode Requests */
+#define TI_SCI_MSG_ENTER_SLEEP		0x0301
 
 /* Clock requests */
 #define TI_SCI_MSG_SET_CLOCK_STATE	0x0100
@@ -44,7 +48,7 @@
 #define TISCI_MSG_PROC_HANDOVER		0xc005
 #define TISCI_MSG_SET_PROC_BOOT_CONFIG	0xc100
 #define TISCI_MSG_SET_PROC_BOOT_CTRL	0xc101
-#define TISCI_MSG_PROC_AUTH_BOOT_IMIAGE	0xc120
+#define TISCI_MSG_PROC_AUTH_BOOT_IMAGE	0xc120
 #define TISCI_MSG_GET_PROC_BOOT_STATUS	0xc400
 #define TISCI_MSG_WAIT_PROC_BOOT_STATUS	0xc401
 
@@ -70,18 +74,30 @@ struct ti_sci_msg_hdr {
 } __packed;
 
 /**
- * struct ti_sci_msg_resp_version - Response for a message
+ * struct ti_sci_msg_version_req - Request for firmware version information
+ * @hdr:	Generic header
+ *
+ * Request for TI_SCI_MSG_VERSION
+ */
+struct ti_sci_msg_req_version {
+	struct ti_sci_msg_hdr hdr;
+} __packed;
+
+/**
+ * struct ti_sci_msg_resp_version - Response for firmware version information
  * @hdr:		Generic header
  * @firmware_description: String describing the firmware
  * @firmware_revision:	Firmware revision
  * @abi_major:		Major version of the ABI that firmware supports
  * @abi_minor:		Minor version of the ABI that firmware supports
+ * @sub_version:	Sub-version number of the firmware
+ * @patch_version:	Patch-version number of the firmware.
  *
  * In general, ABI version changes follow the rule that minor version increments
  * are backward compatible. Major revision changes in ABI may not be
  * backward compatible.
  *
- * Response to a generic message with message type TI_SCI_MSG_VERSION
+ * Response to request TI_SCI_MSG_VERSION
  */
 struct ti_sci_msg_resp_version {
 	struct ti_sci_msg_hdr hdr;
@@ -90,6 +106,8 @@ struct ti_sci_msg_resp_version {
 	uint16_t firmware_revision;
 	uint8_t abi_major;
 	uint8_t abi_minor;
+	uint8_t sub_version;
+	uint8_t patch_version;
 } __packed;
 
 /**
@@ -104,6 +122,30 @@ struct ti_sci_msg_req_reboot {
 	struct ti_sci_msg_hdr hdr;
 #define TI_SCI_DOMAIN_FULL_SOC_RESET	0x0
 	uint8_t domain;
+} __packed;
+
+/**
+ * struct ti_sci_msg_resp_query_fw_caps - Response for query firmware caps
+ * @hdr:	Generic header
+ * @fw_caps:	Each bit in fw_caps indicating one FW/SOC capability
+ *		MSG_FLAG_CAPS_GENERIC: Generic capability (LPM not supported)
+ *		MSG_FLAG_CAPS_LPM_DEEP_SLEEP: Deep Sleep LPM
+ *		MSG_FLAG_CAPS_LPM_MCU_ONLY: MCU only LPM
+ *		MSG_FLAG_CAPS_LPM_STANDBY: Standby LPM
+ *		MSG_FLAG_CAPS_LPM_PARTIAL_IO: Partial IO in LPM
+ *
+ * Response to a generic message with message type TI_SCI_MSG_QUERY_FW_CAPS
+ * providing currently available SOC/firmware capabilities. SoC that don't
+ * support low power modes return only MSG_FLAG_CAPS_GENERIC capability.
+ */
+struct ti_sci_msg_resp_query_fw_caps {
+	struct ti_sci_msg_hdr hdr;
+#define MSG_FLAG_CAPS_GENERIC		TI_SCI_MSG_FLAG(0)
+#define MSG_FLAG_CAPS_LPM_DEEP_SLEEP	TI_SCI_MSG_FLAG(1)
+#define MSG_FLAG_CAPS_LPM_MCU_ONLY	TI_SCI_MSG_FLAG(2)
+#define MSG_FLAG_CAPS_LPM_STANDBY	TI_SCI_MSG_FLAG(3)
+#define MSG_FLAG_CAPS_LPM_PARTIAL_IO	TI_SCI_MSG_FLAG(4)
+	uint64_t fw_caps;
 } __packed;
 
 /**
@@ -704,6 +746,28 @@ struct ti_sci_msg_req_wait_proc_boot_status {
 	uint32_t status_flags_1_set_any_wait;
 	uint32_t status_flags_1_clr_all_wait;
 	uint32_t status_flags_1_clr_any_wait;
+} __packed;
+
+/**
+ * struct ti_sci_msg_req_enter_sleep - Request for TI_SCI_MSG_ENTER_SLEEP.
+ *
+ * @hdr		    Generic Header
+ * @mode	    Low power mode to enter.
+ * @proc_id	    Processor id to be restored.
+ * @core_resume_lo  Low 32-bits of physical pointer to address for core
+ *		    to begin execution upon resume.
+ * @core_resume_hi  High 32-bits of physical pointer to address for core
+ *		    to begin execution upon resume.
+ *
+ * This message is to be sent after TI_SCI_MSG_PREPARE_SLEEP is sent from OS
+ * and is what actually triggers entry into the specified low power mode.
+ */
+struct ti_sci_msg_req_enter_sleep {
+	struct ti_sci_msg_hdr hdr;
+	uint8_t mode;
+	uint8_t processor_id;
+	uint32_t core_resume_lo;
+	uint32_t core_resume_hi;
 } __packed;
 
 #endif /* TI_SCI_PROTOCOL_H */

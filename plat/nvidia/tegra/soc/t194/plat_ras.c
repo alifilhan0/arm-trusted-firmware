@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2020-2021, NVIDIA Corporation. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -152,12 +152,6 @@ void tegra194_ras_enable(void)
 
 			/* enable specified errors, or set to 0 if no supported error */
 			write_erxctlr_el1(err_ctrl);
-
-			/*
-			 * Check if all the bit settings have been enabled to detect
-			 * uncorrected/corrected errors, if not assert.
-			 */
-			assert(read_erxctlr_el1() == err_ctrl);
 		}
 	}
 }
@@ -255,7 +249,6 @@ void tegra194_ras_corrected_err_clear(uint64_t *cookie)
 	 * of range.
 	 */
 	*cookie = 0ULL;
-	return;
 }
 
 /* Function to probe an error from error record group. */
@@ -291,7 +284,7 @@ static int32_t tegra194_ras_node_handler(uint32_t errselr, const char *name,
 	ERROR("RAS Error in %s, ERRSELR_EL1=0x%x:\n", name, errselr);
 	ERROR("\tStatus = 0x%" PRIx64 "\n", status);
 
-	/* Print uncorrectable errror information. */
+	/* Print uncorrectable error information. */
 	if (ERR_STATUS_GET_FIELD(status, UE) != 0U) {
 
 		ERR_STATUS_SET_FIELD(val, UE, 1);
@@ -491,7 +484,7 @@ REGISTER_RAS_INTERRUPTS(carmel_ras_interrupts);
 void plat_ea_handler(unsigned int ea_reason, uint64_t syndrome, void *cookie,
 		void *handle, uint64_t flags)
 {
-#if RAS_EXTENSION
+#if ENABLE_FEAT_RAS
 	tegra194_ea_handler(ea_reason, syndrome, cookie, handle, flags);
 #else
 	plat_default_ea_handler(ea_reason, syndrome, cookie, handle, flags);

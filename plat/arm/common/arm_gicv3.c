@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <platform_def.h>
 
+#include <common/debug.h>
 #include <common/interrupt_props.h>
 #include <drivers/arm/gicv3.h>
 #include <lib/utils.h>
@@ -39,7 +40,11 @@ static const uintptr_t *gicr_frames = gicr_base_addrs;
 
 static const interrupt_prop_t arm_interrupt_props[] = {
 	PLAT_ARM_G1S_IRQ_PROPS(INTR_GROUP1S),
-	PLAT_ARM_G0_IRQ_PROPS(INTR_GROUP0)
+	PLAT_ARM_G0_IRQ_PROPS(INTR_GROUP0),
+#if ENABLE_FEAT_RAS && FFH_SUPPORT
+	INTR_PROP_DESC(PLAT_CORE_FAULT_IRQ, PLAT_RAS_PRI, INTR_GROUP0,
+			GIC_INTR_CFG_LEVEL)
+#endif
 };
 
 /*
@@ -47,8 +52,8 @@ static const interrupt_prop_t arm_interrupt_props[] = {
  * data in the designated EL3 Secure carve-out memory. The `used` attribute
  * is used to prevent the compiler from removing the gicv3 contexts.
  */
-static gicv3_redist_ctx_t rdist_ctx __section("arm_el3_tzc_dram") __used;
-static gicv3_dist_ctx_t dist_ctx __section("arm_el3_tzc_dram") __used;
+static gicv3_redist_ctx_t rdist_ctx __section(".arm_el3_tzc_dram") __used;
+static gicv3_dist_ctx_t dist_ctx __section(".arm_el3_tzc_dram") __used;
 
 /* Define accessor function to get reference to the GICv3 context */
 DEFINE_LOAD_SYM_ADDR(rdist_ctx)

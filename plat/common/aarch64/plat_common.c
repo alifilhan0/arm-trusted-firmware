@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2014-2024, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -9,11 +9,11 @@
 #include <stdint.h>
 
 #include <arch_helpers.h>
+#include <common/debug.h>
 #include <drivers/console.h>
-#if RAS_EXTENSION
+#if ENABLE_FEAT_RAS
 #include <lib/extensions/ras.h>
 #endif
-#include <lib/extensions/twed.h>
 #include <lib/xlat_tables/xlat_mmu_helpers.h>
 #include <plat/common/platform.h>
 
@@ -23,17 +23,19 @@
  * platforms but may also be overridden by a platform if required.
  */
 #pragma weak bl31_plat_runtime_setup
-#pragma weak plat_arm_set_twedel_scr_el3
 
 #if SDEI_SUPPORT
 #pragma weak plat_sdei_handle_masked_trigger
 #pragma weak plat_sdei_validate_entry_point
 #endif
 
+#if FFH_SUPPORT
 #pragma weak plat_ea_handler = plat_default_ea_handler
+#endif
 
 void bl31_plat_runtime_setup(void)
 {
+	console_flush();
 	console_switch_state(CONSOLE_FLAG_RUNTIME);
 }
 
@@ -68,23 +70,29 @@ int plat_sdei_validate_entry_point(uintptr_t ep, unsigned int client_mode)
 }
 #endif
 
-#if !ENABLE_BACKTRACE
-static const char *get_el_str(unsigned int el)
+const char *get_el_str(unsigned int el)
 {
-	if (el == MODE_EL3) {
+	switch (el) {
+	case MODE_EL3:
 		return "EL3";
-	} else if (el == MODE_EL2) {
+	case MODE_EL2:
 		return "EL2";
+	case MODE_EL1:
+		return "EL1";
+	case MODE_EL0:
+		return "EL0";
+	default:
+		assert(false);
+		return NULL;
 	}
-	return "S-EL1";
 }
-#endif /* !ENABLE_BACKTRACE */
 
-/* RAS functions common to AArch64 ARM platforms */
+#if FFH_SUPPORT
+/* Handler for External Aborts from lower EL including RAS errors */
 void plat_default_ea_handler(unsigned int ea_reason, uint64_t syndrome, void *cookie,
 		void *handle, uint64_t flags)
 {
-#if RAS_EXTENSION
+#if ENABLE_FEAT_RAS
 	/* Call RAS EA handler */
 	int handled = ras_ea_handler(ea_reason, syndrome, cookie, handle, flags);
 	if (handled != 0)
@@ -96,25 +104,10 @@ void plat_default_ea_handler(unsigned int ea_reason, uint64_t syndrome, void *co
 	ERROR("Unhandled External Abort received on 0x%lx from %s\n",
 		read_mpidr_el1(), get_el_str(level));
 	ERROR("exception reason=%u syndrome=0x%" PRIx64 "\n", ea_reason, syndrome);
-#if HANDLE_EA_EL3_FIRST
-	/* Skip backtrace for lower EL */
-	if (level != MODE_EL3) {
-		console_flush();
-		do_panic();
-	}
+
+	/* We reached here due to a panic from a lower EL and assuming this is the default
+	 * platform registered handler that we could call on a lower EL panic.
+	 */
+	lower_el_panic();
+}
 #endif
-	panic();
-}
-
-/*******************************************************************************
- * In v8.6+ platforms with delayed trapping of WFE this hook sets the delay. It
- * is a weak function definition so can be overridden depending on the
- * requirements of a platform.  The only hook provided is for the TWED fields
- * in SCR_EL3, the TWED fields in HCR_EL2, SCTLR_EL2, and SCTLR_EL1 should be
- * configured as needed in lower exception levels.
- ******************************************************************************/
-
-uint32_t plat_arm_set_twedel_scr_el3(void)
-{
-	return TWED_DISABLED;
-}

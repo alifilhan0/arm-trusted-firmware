@@ -1,17 +1,24 @@
 /*
- * Copyright (c) 2018-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2020, Arm Limited and Contributors. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <plat_ipi.h>
-#include <versal_def.h>
-#include <plat_private.h>
 #include <common/debug.h>
 #include <drivers/generic_delay_timer.h>
 #include <lib/mmio.h>
-#include <lib/xlat_tables/xlat_tables.h>
+#include <lib/xlat_tables/xlat_tables_v2.h>
 #include <plat/common/platform.h>
+
+#include <plat_common.h>
+#include <plat_ipi.h>
+#include <plat_private.h>
+#include <pm_api_sys.h>
+#include <versal_def.h>
+
+uint32_t platform_id, platform_version;
+uint32_t cpu_clock = VERSAL_CPU_CLOCK;
 
 /*
  * Table of regions to map using the MMU.
@@ -22,48 +29,48 @@ const mmap_region_t plat_versal_mmap[] = {
 	MAP_REGION_FLAT(DEVICE0_BASE, DEVICE0_SIZE, MT_DEVICE | MT_RW | MT_SECURE),
 	MAP_REGION_FLAT(DEVICE1_BASE, DEVICE1_SIZE, MT_DEVICE | MT_RW | MT_SECURE),
 	MAP_REGION_FLAT(CRF_BASE, CRF_SIZE, MT_DEVICE | MT_RW | MT_SECURE),
-	MAP_REGION_FLAT(FPD_MAINCCI_BASE, FPD_MAINCCI_SIZE, MT_DEVICE | MT_RW |
+	MAP_REGION_FLAT(PLAT_ARM_CCI_BASE, PLAT_ARM_CCI_SIZE, MT_DEVICE | MT_RW |
 			MT_SECURE),
 	{ 0 }
 };
 
-const mmap_region_t *plat_versal_get_mmap(void)
+const mmap_region_t *plat_get_mmap(void)
 {
 	return plat_versal_mmap;
 }
 
 static void versal_print_platform_name(void)
 {
-	NOTICE("ATF running on Xilinx %s\n", PLATFORM_NAME);
+	NOTICE("TF-A running on %s\n", PLATFORM_NAME);
 }
 
 void versal_config_setup(void)
 {
-	uint32_t val;
-
 	/* Configure IPI data for versal */
 	versal_ipi_config_table_init();
 
 	versal_print_platform_name();
 
-	/* Global timer init - Program time stamp reference clk */
-	val = mmio_read_32(VERSAL_CRL_TIMESTAMP_REF_CTRL);
-	val |= VERSAL_CRL_APB_TIMESTAMP_REF_CTRL_CLKACT_BIT;
-	mmio_write_32(VERSAL_CRL_TIMESTAMP_REF_CTRL, val);
-
-	/* Clear reset of timestamp reg */
-	mmio_write_32(VERSAL_CRL_RST_TIMESTAMP_OFFSET, 0x0);
-
-	/* Program freq register in System counter and enable system counter. */
-	mmio_write_32(VERSAL_IOU_SCNTRS_BASE_FREQ, VERSAL_CPU_CLOCK);
-	mmio_write_32(VERSAL_IOU_SCNTRS_COUNTER_CONTROL_REG,
-		      VERSAL_IOU_SCNTRS_CONTROL_EN);
-
 	generic_delay_timer_init();
 }
 
-unsigned int plat_get_syscnt_freq2(void)
+void board_detection(void)
 {
-	return VERSAL_CPU_CLOCK;
+	uint32_t plat_info[2];
+
+	if (pm_get_chipid(plat_info) != PM_RET_SUCCESS) {
+		/* If the call is failed we cannot proceed with further
+		 * setup. TF-A to panic in this situation.
+		 */
+		NOTICE("Failed to read the chip information");
+		panic();
+	}
+
+	platform_id = FIELD_GET(PLATFORM_MASK, plat_info[1]);
+	platform_version = FIELD_GET(PLATFORM_VERSION_MASK, plat_info[1]);
 }
 
+uint32_t get_uart_clk(void)
+{
+	return UART_CLOCK;
+}

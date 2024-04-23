@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2020, ARM Limited and Contributors. All rights reserved.
- * Copyright (c) 2019-2020, Intel Corporation. All rights reserved.
+ * Copyright (c) 2019-2022, Intel Corporation. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -14,8 +14,10 @@
 #include <lib/mmio.h>
 #include <lib/xlat_tables/xlat_tables.h>
 
+#include "ccu/ncore_ccu.h"
 #include "socfpga_mailbox.h"
 #include "socfpga_private.h"
+#include "socfpga_sip_svc.h"
 
 static entry_point_info_t bl32_image_ep_info;
 static entry_point_info_t bl33_image_ep_info;
@@ -34,6 +36,25 @@ entry_point_info_t *bl31_plat_get_next_image_ep_info(uint32_t type)
 		return NULL;
 }
 
+void setup_smmu_secure_context(void)
+{
+	/*
+	 * Program SCR0 register (0xFA000000)
+	 * to set SMCFCFG bit[21] to 0x1 which raise stream match conflict fault
+	 * to set CLIENTPD bit[0] to 0x0 which enables SMMU for secure context
+	 */
+	mmio_write_32(0xFA000000, 0x00200000);
+
+	/*
+	 * Program SCR1 register (0xFA000004)
+	 * to set NSNUMSMRGO bit[14:8] to 0x4 which stream mapping register
+	 * for non-secure context and the rest will be secure context
+	 * to set NSNUMCBO bit[5:0] to 0x4 which allocate context bank
+	 * for non-secure context and the rest will be secure context
+	 */
+	mmio_write_32(0xFA000004, 0x00000404);
+}
+
 void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 				u_register_t arg2, u_register_t arg3)
 {
@@ -41,8 +62,8 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 
 	mmio_write_64(PLAT_SEC_ENTRY, PLAT_SEC_WARM_ENTRY);
 
-	console_16550_register(PLAT_UART0_BASE, PLAT_UART_CLOCK, PLAT_BAUDRATE,
-		&console);
+	console_16550_register(PLAT_INTEL_UART_BASE, PLAT_UART_CLOCK,
+		PLAT_BAUDRATE, &console);
 	/*
 	 * Check params passed from BL31 should not be NULL,
 	 */
@@ -108,6 +129,7 @@ void bl31_platform_setup(void)
 	gicv2_distif_init();
 	gicv2_pcpu_distif_init();
 	gicv2_cpuif_enable();
+	setup_smmu_secure_context();
 
 	/* Signal secondary CPUs to jump to BL31 (BL2 = U-boot SPL) */
 	mmio_write_64(PLAT_CPU_RELEASE_ADDR,
@@ -131,7 +153,7 @@ const mmap_region_t plat_agilex_mmap[] = {
 
 /*******************************************************************************
  * Perform the very early platform specific architectural setup here. At the
- * moment this is only intializes the mmu in a quick and dirty way.
+ * moment this is only initializes the mmu in a quick and dirty way.
  ******************************************************************************/
 void bl31_plat_arch_setup(void)
 {

@@ -4,18 +4,16 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-/* common headers */
 #include <assert.h>
-
 #include <arch_helpers.h>
 #include <common/debug.h>
 #include <drivers/gpio.h>
 #include <lib/psci/psci.h>
 
-/* platform specific headers */
 #include <mt_gic_v3.h>
 #include <mtspmc.h>
 #include <plat/common/platform.h>
+#include <plat_dfd.h>
 #include <plat_mtk_lpm.h>
 #include <plat_params.h>
 #include <plat_pm.h>
@@ -166,6 +164,8 @@ static void plat_mcusys_pwron_common(unsigned int cpu,
 	mt_gic_init();
 	mt_gic_distif_restore();
 	gic_sgi_restore_all();
+
+	dfd_resume();
 
 	(void)plat_mt_pm_invoke(plat_mt_pm->pwr_mcusys_on_finished, cpu, state);
 }

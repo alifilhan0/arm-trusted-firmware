@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2021, Arm Limited and Contributors. All rights reserved.
+ * Copyright (c) 2014-2023, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -10,11 +10,13 @@
 #include <common/bl_common.h>
 #include <common/debug.h>
 #include <cpu_macros.S>
-#include <lib/cpus/errata_report.h>
+#include <lib/cpus/cpu_ops.h>
+#include <lib/cpus/errata.h>
 #include <lib/el3_runtime/cpu_data.h>
 
  /* Reset fn is needed in BL at reset vector */
-#if defined(IMAGE_BL1) || defined(IMAGE_BL31) || (defined(IMAGE_BL2) && BL2_AT_EL3)
+#if defined(IMAGE_BL1) || defined(IMAGE_BL31) ||	\
+	(defined(IMAGE_BL2) && RESET_TO_BL2)
 	/*
 	 * The reset handler common to all platforms.  After a matching
 	 * cpu_ops structure entry is found, the correponding reset_handler
@@ -30,7 +32,12 @@ func reset_handler
 
 	/* Get the matching cpu_ops pointer */
 	bl	get_cpu_ops_ptr
+
 #if ENABLE_ASSERTIONS
+	/*
+	 * Assert if invalid cpu_ops obtained. If this is not valid, it may
+	 * suggest that the proper CPU file hasn't been included.
+	 */
 	cmp	x0, #0
 	ASM_ASSERT(ne)
 #endif
@@ -99,10 +106,6 @@ func init_cpu_ops
 	cbnz	x0, 1f
 	mov	x10, x30
 	bl	get_cpu_ops_ptr
-#if ENABLE_ASSERTIONS
-	cmp	x0, #0
-	ASM_ASSERT(ne)
-#endif
 	str	x0, [x6, #CPU_DATA_CPU_OPS_PTR]!
 	mov x30, x10
 1:
@@ -286,72 +289,6 @@ func cpu_rev_var_range
 	ret
 endfunc cpu_rev_var_range
 
-#if REPORT_ERRATA
-/*
- * void print_errata_status(void);
- *
- * Function to print errata status for CPUs of its class. Must be called only:
- *
- *   - with MMU and data caches are enabled;
- *   - after cpu_ops have been initialized in per-CPU data.
- */
-	.globl print_errata_status
-func print_errata_status
-#ifdef IMAGE_BL1
-	/*
-	 * BL1 doesn't have per-CPU data. So retrieve the CPU operations
-	 * directly.
-	 */
-	stp	xzr, x30, [sp, #-16]!
-	bl	get_cpu_ops_ptr
-	ldp	xzr, x30, [sp], #16
-	ldr	x1, [x0, #CPU_ERRATA_FUNC]
-	cbnz	x1, .Lprint
-#else
-	/*
-	 * Retrieve pointer to cpu_ops from per-CPU data, and further, the
-	 * errata printing function. If it's non-NULL, jump to the function in
-	 * turn.
-	 */
-	mrs	x0, tpidr_el3
-#if ENABLE_ASSERTIONS
-	cmp	x0, #0
-	ASM_ASSERT(ne)
-#endif
-	ldr	x1, [x0, #CPU_DATA_CPU_OPS_PTR]
-#if ENABLE_ASSERTIONS
-	cmp	x1, #0
-	ASM_ASSERT(ne)
-#endif
-	ldr	x0, [x1, #CPU_ERRATA_FUNC]
-	cbz	x0, .Lnoprint
-
-	/*
-	 * Printing errata status requires atomically testing the printed flag.
-	 */
-	stp	x19, x30, [sp, #-16]!
-	mov	x19, x0
-
-	/*
-	 * Load pointers to errata lock and printed flag. Call
-	 * errata_needs_reporting to check whether this CPU needs to report
-	 * errata status pertaining to its class.
-	 */
-	ldr	x0, [x1, #CPU_ERRATA_LOCK]
-	ldr	x1, [x1, #CPU_ERRATA_PRINTED]
-	bl	errata_needs_reporting
-	mov	x1, x19
-	ldp	x19, x30, [sp], #16
-	cbnz	x0, .Lprint
-#endif
-.Lnoprint:
-	ret
-.Lprint:
-	/* Jump to errata reporting function for this CPU */
-	br	x1
-endfunc print_errata_status
-#endif
-
 /*
  * int check_wa_cve_2017_5715(void);
  *
@@ -381,7 +318,7 @@ func check_wa_cve_2017_5715
 	 * If the reserved function pointer is NULL, this CPU
 	 * is unaffected by CVE-2017-5715 so bail out.
 	 */
-	cmp	x0, #0
+	cmp	x0, #CPU_NO_EXTRA1_FUNC
 	beq	1f
 	br	x0
 1:
@@ -416,3 +353,41 @@ func wa_cve_2018_3639_get_disable_ptr
 	ldr	x0, [x0, #CPU_EXTRA2_FUNC]
 	ret
 endfunc wa_cve_2018_3639_get_disable_ptr
+
+/*
+ * int check_smccc_arch_wa3_applies(void);
+ *
+ * This function checks whether SMCCC_ARCH_WORKAROUND_3 is enabled to mitigate
+ * CVE-2022-23960 for this CPU. It returns:
+ *  - ERRATA_APPLIES when SMCCC_ARCH_WORKAROUND_3 can be invoked to mitigate
+ *    the CVE.
+ *  - ERRATA_NOT_APPLIES when SMCCC_ARCH_WORKAROUND_3 should not be invoked to
+ *    mitigate the CVE.
+ *
+ * NOTE: Must be called only after cpu_ops have been initialized
+ *       in per-CPU data.
+ */
+	.globl	check_smccc_arch_wa3_applies
+func check_smccc_arch_wa3_applies
+	mrs	x0, tpidr_el3
+#if ENABLE_ASSERTIONS
+	cmp	x0, #0
+	ASM_ASSERT(ne)
+#endif
+	ldr	x0, [x0, #CPU_DATA_CPU_OPS_PTR]
+#if ENABLE_ASSERTIONS
+	cmp	x0, #0
+	ASM_ASSERT(ne)
+#endif
+	ldr	x0, [x0, #CPU_EXTRA3_FUNC]
+	/*
+	 * If the reserved function pointer is NULL, this CPU
+	 * is unaffected by CVE-2022-23960 so bail out.
+	 */
+	cmp	x0, #CPU_NO_EXTRA3_FUNC
+	beq	1f
+	br	x0
+1:
+	mov	x0, #ERRATA_NOT_APPLIES
+	ret
+endfunc check_smccc_arch_wa3_applies

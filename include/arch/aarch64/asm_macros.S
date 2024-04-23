@@ -25,12 +25,50 @@
 #endif
 
 
-	.macro	func_prologue
+	/*
+	 * Create a stack frame at the start of an assembly function. Will also
+	 * add all necessary call frame information (cfi) directives for a
+	 * pretty stack trace. This is necessary as there is quite a bit of
+	 * flexibility within a stack frame and the stack pointer can move
+	 * around throughout the function. If the debugger isn't told where to
+	 * find things, it gets lost, gives up and displays nothing. So inform
+	 * the debugger of what's where. Anchor the Canonical Frame Address
+	 * (CFA; the thing used to track what's where) to the frame pointer as
+	 * that's not expected to change in the function body and no extra
+	 * bookkeeping will be necessary, allowing free movement of the sp
+	 *
+	 *   _frame_size: requested space for caller to use. Must be a mutliple
+	 *     of 16 for stack pointer alignment
+	 */
+	.macro	func_prologue _frame_size=0
+	.if \_frame_size & 0xf
+	.error "frame_size must have stack pointer alignment (multiple of 16)"
+	.endif
+
+	/* put frame record at top of frame */
 	stp	x29, x30, [sp, #-0x10]!
 	mov	x29,sp
+	.if \_frame_size
+	sub	sp, sp, #\_frame_size
+	.endif
+
+	/* point CFA to start of frame record, i.e. x29 + 0x10 */
+	.cfi_def_cfa	x29,  0x10
+	/* inform it about x29, x30 locations */
+	.cfi_offset	x30, -0x8
+	.cfi_offset	x29, -0x10
 	.endm
 
-	.macro	func_epilogue
+	/*
+	 * Clear stack frame at the end of an assembly function.
+	 *
+	 *   _frame_size: the value passed to func_prologue
+	 */
+	.macro	func_epilogue _frame_size=0
+	/* remove requested space */
+	.if \_frame_size
+	add	sp, sp, #\_frame_size
+	.endif
 	ldp	x29, x30, [sp], #0x10
 	.endm
 
@@ -186,11 +224,12 @@
 	.space	SPINLOCK_ASM_SIZE
 	.endm
 
-#if RAS_EXTENSION
+	/*
+	 * With RAS extension executes esb instruction, else NOP
+	 */
 	.macro esb
 	.inst	0xd503221f
 	.endm
-#endif
 
 	/*
 	 * Helper macro to read system register value into x0
@@ -215,15 +254,65 @@
 	.endm
 
 	/*
+	 * The "sb" instruction was introduced later into the architecture,
+	 * so not all toolchains understand it. Some deny its usage unless
+	 * a supported processor is specified on the build command line.
+	 * Use sb's system register encoding to work around this, we already
+	 * guard the sb execution with a feature flag.
+	 */
+
+	.macro sb_barrier_insn
+	msr	SYSREG_SB, xzr
+	.endm
+
+	/*
+	 * Macro for using speculation barrier instruction introduced by
+	 * FEAT_SB, if it's enabled.
+	 */
+	.macro speculation_barrier
+#if ENABLE_FEAT_SB
+	sb_barrier_insn
+#else
+	dsb	sy
+	isb
+#endif
+	.endm
+
+	/*
 	 * Macro for mitigating against speculative execution beyond ERET. Uses the
 	 * speculation barrier instruction introduced by FEAT_SB, if it's enabled.
 	 */
 	.macro exception_return
 	eret
 #if ENABLE_FEAT_SB
-	sb
+	sb_barrier_insn
 #else
 	dsb	nsh
+	isb
+#endif
+	.endm
+
+	/*
+	 * Macro to unmask External Aborts by changing PSTATE.A bit.
+	 * Put explicit synchronization event to ensure newly unmasked interrupt
+	 * is taken immediately.
+	 */
+	.macro  unmask_async_ea
+	msr     daifclr, #DAIF_ABT_BIT
+	isb
+	.endm
+
+	/* Macro for error synchronization on exception boundries.
+	 * With FEAT_RAS enabled, it is assumed that FEAT_IESB is also present
+	 * and enabled.
+	 * FEAT_IESB provides an implicit error synchronization event at exception
+	 * entry and exception return, so there is no need for any explicit instruction.
+	 */
+	.macro synchronize_errors
+#if !ENABLE_FEAT_RAS
+	/* Complete any stores that may return an abort */
+	dsb	sy
+	/* Synchronise the CPU context with the completion of the dsb */
 	isb
 #endif
 	.endm

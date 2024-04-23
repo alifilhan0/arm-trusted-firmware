@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, Arm Limited. All rights reserved.
+ * Copyright (c) 2020-2024, Arm Limited. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -11,6 +11,7 @@
 
 #include <common/debug.h>
 #include <common/tbbr/tbbr_img_def.h>
+#include <drivers/auth/crypto_mod.h>
 #include <drivers/measured_boot/event_log/tcg.h>
 
 /*
@@ -42,42 +43,6 @@
 
 #define MEMBER_SIZE(type, member) sizeof(((type *)0)->member)
 
-/*
- * Each event log entry has some metadata (i.e. a string) that identifies
- * what is measured.These macros define these strings.
- * Note that these strings follow the standardization recommendations
- * defined in the Arm Server Base Security Guide (a.k.a. SBSG, Arm DEN 0086),
- * where applicable. They should not be changed in the code.
- * Where the SBSG does not make recommendations, we are free to choose any
- * naming convention.
- * The key thing is to choose meaningful strings so that when the TPM event
- * log is used in attestation, the different components can be identified.
- */
-#define EVLOG_BL2_STRING		"BL_2"
-#define EVLOG_BL31_STRING		"SECURE_RT_EL3"
-#if defined(SPD_opteed)
-#define EVLOG_BL32_STRING		"SECURE_RT_EL1_OPTEE"
-#elif defined(SPD_tspd)
-#define EVLOG_BL32_STRING		"SECURE_RT_EL1_TSPD"
-#elif defined(SPD_tlkd)
-#define EVLOG_BL32_STRING		"SECURE_RT_EL1_TLKD"
-#elif defined(SPD_trusty)
-#define EVLOG_BL32_STRING		"SECURE_RT_EL1_TRUSTY"
-#else
-#define EVLOG_BL32_STRING		"SECURE_RT_EL1_UNKNOWN"
-#endif
-#define	EVLOG_BL32_EXTRA1_STRING	"SECURE_RT_EL1_OPTEE_EXTRA1"
-#define	EVLOG_BL32_EXTRA2_STRING	"SECURE_RT_EL1_OPTEE_EXTRA2"
-#define EVLOG_BL33_STRING		"BL_33"
-#define EVLOG_FW_CONFIG_STRING		"FW_CONFIG"
-#define EVLOG_HW_CONFIG_STRING		"HW_CONFIG"
-#define EVLOG_NT_FW_CONFIG_STRING	"NT_FW_CONFIG"
-#define EVLOG_SCP_BL2_STRING		"SYS_CTRL_2"
-#define EVLOG_SOC_FW_CONFIG_STRING	"SOC_FW_CONFIG"
-#define EVLOG_STM32_STRING		"STM32"
-#define EVLOG_TB_FW_CONFIG_STRING	"TB_FW_CONFIG"
-#define	EVLOG_TOS_FW_CONFIG_STRING	"TOS_FW_CONFIG"
-
 typedef struct {
 	unsigned int id;
 	const char *name;
@@ -100,12 +65,18 @@ typedef struct {
 			sizeof(event2_data_t))
 
 /* Functions' declarations */
+void event_log_buf_init(uint8_t *event_log_start, uint8_t *event_log_finish);
 void event_log_init(uint8_t *event_log_start, uint8_t *event_log_finish);
+void event_log_write_specid_event(void);
 void event_log_write_header(void);
 void dump_event_log(uint8_t *log_addr, size_t log_size);
-const event_log_metadata_t *plat_event_log_get_metadata(void);
+int event_log_measure(uintptr_t data_base, uint32_t data_size,
+		      unsigned char hash_data[CRYPTO_MD_MAX_SIZE]);
+void event_log_record(const uint8_t *hash, uint32_t event_type,
+		      const event_log_metadata_t *metadata_ptr);
 int event_log_measure_and_record(uintptr_t data_base, uint32_t data_size,
-				 uint32_t data_id);
+				 uint32_t data_id,
+				 const event_log_metadata_t *metadata_ptr);
 size_t event_log_get_cur_size(uint8_t *event_log_start);
 
 #endif /* EVENT_LOG_H */

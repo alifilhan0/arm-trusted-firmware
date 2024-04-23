@@ -18,6 +18,7 @@
 /* Platform Includes */
 #include <emi_mpu.h>
 #include <mt_gic_v3.h>
+#include <mt_spm.h>
 #include <mt_timer.h>
 #include <mtgpio.h>
 #include <mtk_dcm.h>
@@ -94,13 +95,14 @@ void bl31_platform_setup(void)
 	mt_gpio_init();
 	mt_systimer_init();
 	generic_delay_timer_init();
+	spm_boot_init();
 
 	emi_mpu_init();
 }
 
 /*******************************************************************************
  * Perform the very early platform specific architectural setup here. At the
- * moment this is only intializes the mmu in a quick and dirty way.
+ * moment this is only initializes the mmu in a quick and dirty way.
  ******************************************************************************/
 void bl31_plat_arch_setup(void)
 {

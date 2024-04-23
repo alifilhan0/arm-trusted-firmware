@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2023, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -14,8 +14,11 @@
 #include <bl31/ehf.h>
 #include <common/bl_common.h>
 #include <common/debug.h>
+#include <common/feat_detect.h>
 #include <common/runtime_svc.h>
 #include <drivers/console.h>
+#include <lib/bootmarker_capture.h>
+#include <lib/el3_runtime/context_debug.h>
 #include <lib/el3_runtime/context_mgmt.h>
 #include <lib/pmf/pmf.h>
 #include <lib/runtime_instr.h>
@@ -23,8 +26,13 @@
 #include <services/std_svc.h>
 
 #if ENABLE_RUNTIME_INSTRUMENTATION
-PMF_REGISTER_SERVICE_SMC(rt_instr_svc, PMF_RT_INSTR_SVC_ID,
-	RT_INSTR_TOTAL_IDS, PMF_STORE_ENABLE)
+	PMF_REGISTER_SERVICE_SMC(rt_instr_svc, PMF_RT_INSTR_SVC_ID,
+		RT_INSTR_TOTAL_IDS, PMF_STORE_ENABLE)
+#endif
+
+#if ENABLE_RUNTIME_INSTRUMENTATION
+	PMF_REGISTER_SERVICE(bl_svc, PMF_RT_INSTR_SVC_ID,
+		BL_TOTAL_IDS, PMF_DUMP_ENABLE)
 #endif
 
 /*******************************************************************************
@@ -75,7 +83,7 @@ uintptr_t get_arm_std_svc_args(unsigned int svc_mask)
 /*******************************************************************************
  * Simple function to initialise all BL31 helper libraries.
  ******************************************************************************/
-void __init bl31_lib_init(void)
+static void __init bl31_lib_init(void)
 {
 	cm_init();
 }
@@ -92,15 +100,6 @@ void bl31_setup(u_register_t arg0, u_register_t arg1, u_register_t arg2,
 	/* Perform late platform-specific setup */
 	bl31_plat_arch_setup();
 
-#if ENABLE_FEAT_HCX
-	/*
-	 * Assert that FEAT_HCX is supported on this system, without this check
-	 * an exception would occur during context save/restore if enabled but
-	 * not supported.
-	 */
-	assert(is_feat_hcx_present());
-#endif /* ENABLE_FEAT_HCX */
-
 #if CTX_INCLUDE_PAUTH_REGS
 	/*
 	 * Assert that the ARMv8.3-PAuth registers are present or an access
@@ -108,6 +107,9 @@ void bl31_setup(u_register_t arg0, u_register_t arg1, u_register_t arg2,
 	 */
 	assert(is_armv8_3_pauth_present());
 #endif /* CTX_INCLUDE_PAUTH_REGS */
+
+	/* Prints context_memory allocated for all the security states */
+	report_ctx_memory_usage();
 }
 
 /*******************************************************************************
@@ -120,8 +122,23 @@ void bl31_setup(u_register_t arg0, u_register_t arg1, u_register_t arg2,
  ******************************************************************************/
 void bl31_main(void)
 {
+	/* Init registers that never change for the lifetime of TF-A */
+	cm_manage_extensions_el3();
+
+	/* Init per-world context registers for non-secure world */
+	manage_extensions_nonsecure_per_world();
+
 	NOTICE("BL31: %s\n", version_string);
 	NOTICE("BL31: %s\n", build_message);
+
+#if FEATURE_DETECTION
+	/* Detect if features enabled during compilation are supported by PE. */
+	detect_arch_features();
+#endif /* FEATURE_DETECTION */
+
+#if ENABLE_RUNTIME_INSTRUMENTATION
+	PMF_CAPTURE_TIMESTAMP(bl_svc, BL31_ENTRY, PMF_CACHE_MAINT);
+#endif
 
 #ifdef SUPPORT_UNKNOWN_MPID
 	if (unsupported_mpid_flag == 0) {
@@ -163,6 +180,7 @@ void bl31_main(void)
 	if (bl32_init != NULL) {
 		INFO("BL31: Initializing BL32\n");
 
+		console_flush();
 		int32_t rc = (*bl32_init)();
 
 		if (rc == 0) {
@@ -178,6 +196,7 @@ void bl31_main(void)
 	if (rmm_init != NULL) {
 		INFO("BL31: Initializing RMM\n");
 
+		console_flush();
 		int32_t rc = (*rmm_init)();
 
 		if (rc == 0) {
@@ -199,6 +218,11 @@ void bl31_main(void)
 	 * from BL31
 	 */
 	bl31_plat_runtime_setup();
+
+#if ENABLE_RUNTIME_INSTRUMENTATION
+	PMF_CAPTURE_TIMESTAMP(bl_svc, BL31_EXIT, PMF_CACHE_MAINT);
+	console_flush();
+#endif
 }
 
 /*******************************************************************************
@@ -253,7 +277,16 @@ void __init bl31_prepare_next_image_entry(void)
 		(image_type == SECURE) ? "secure" : "normal");
 	print_entry_point_info(next_image_info);
 	cm_init_my_context(next_image_info);
-	cm_prepare_el3_exit(image_type);
+
+	/*
+	* If we are entering the Non-secure world, use
+	* 'cm_prepare_el3_exit_ns' to exit.
+	*/
+	if (image_type == NON_SECURE) {
+		cm_prepare_el3_exit_ns();
+	} else {
+		cm_prepare_el3_exit(image_type);
+	}
 }
 
 /*******************************************************************************

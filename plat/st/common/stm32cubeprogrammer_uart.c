@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2021-2023, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -409,7 +409,7 @@ static int uart_read(uint8_t id, uintptr_t buffer, size_t length)
 	handle.addr = (uint8_t *)buffer;
 	handle.len = length;
 
-	INFO("UART: read phase %u at 0x%lx size 0x%x\n",
+	INFO("UART: read phase %u at 0x%lx size 0x%zx\n",
 	     id, buffer, length);
 	while (!start_done) {
 		ret = uart_receive_command(&command);
@@ -481,18 +481,19 @@ static int uart_read(uint8_t id, uintptr_t buffer, size_t length)
 		}
 	}
 
+	stm32_uart_flush(&handle.uart);
+
 	return 0;
 }
 
 /* Init UART: 115200, 8bit 1stop parity even and enable FIFO mode */
 const struct stm32_uart_init_s init = {
-	.baud_rate = U(115200),
+	.baud_rate = STM32MP_UART_BAUDRATE,
 	.word_length = STM32_UART_WORDLENGTH_9B,
 	.stop_bits = STM32_UART_STOPBITS_1,
 	.parity = STM32_UART_PARITY_EVEN,
 	.hw_flow_control = STM32_UART_HWCONTROL_NONE,
 	.mode = STM32_UART_MODE_TX_RX,
-	.over_sampling = STM32_UART_OVERSAMPLING_16,
 	.fifo_mode = STM32_UART_FIFOMODE_EN,
 };
 

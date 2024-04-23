@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -218,13 +218,11 @@ unexpected_sync_exception:
 smc_handler:
 	/* -----------------------------------------------------
 	 * Save x0-x29 and ARMv8.3-PAuth (if enabled) registers.
-	 * If Secure Cycle Counter is not disabled in MDCR_EL3
-	 * when ARMv8.5-PMU is implemented, save PMCR_EL0 and
-	 * disable Cycle Counter.
+	 * Save PMCR_EL0 and disable Cycle Counter.
 	 * TODO: Revisit to store only SMCCC specified registers.
 	 * -----------------------------------------------------
 	 */
-	bl	save_gp_pmcr_pauth_regs
+	bl	prepare_el3_entry
 
 #if ENABLE_PAUTH
 	/* -----------------------------------------------------

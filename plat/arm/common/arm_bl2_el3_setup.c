@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2017-2023, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -7,6 +7,7 @@
 #include <assert.h>
 
 #include <drivers/generic_delay_timer.h>
+#include <drivers/partition/partition.h>
 #include <plat/arm/common/plat_arm.h>
 #include <plat/common/platform.h>
 #include <platform_def.h>
@@ -34,7 +35,7 @@ void arm_bl2_el3_early_platform_setup(void)
 	/*
 	 * Allow BL2 to see the whole Trusted RAM. This is determined
 	 * statically since we cannot rely on BL1 passing this information
-	 * in the BL2_AT_EL3 case.
+	 * in the RESET_TO_BL2 case.
 	 */
 	bl2_el3_tzram_layout.total_base = ARM_BL_RAM_BASE;
 	bl2_el3_tzram_layout.total_size = ARM_BL_RAM_SIZE;
@@ -71,7 +72,9 @@ void arm_bl2_el3_plat_arch_setup(void)
 {
 
 #if USE_COHERENT_MEM
-	/* Ensure ARM platforms dont use coherent memory in BL2_AT_EL3 */
+	/* Ensure ARM platforms dont use coherent memory
+	 * in RESET_TO_BL2
+	 */
 	assert(BL_COHERENT_RAM_END - BL_COHERENT_RAM_BASE == 0U);
 #endif
 
@@ -92,7 +95,15 @@ void arm_bl2_el3_plat_arch_setup(void)
 
 void bl2_el3_plat_arch_setup(void)
 {
+	int __maybe_unused ret;
 	arm_bl2_el3_plat_arch_setup();
+#if ARM_GPT_SUPPORT
+	ret = gpt_partition_init();
+	if (ret != 0) {
+		ERROR("GPT partition initialisation failed!\n");
+		panic();
+	}
+#endif /* ARM_GPT_SUPPORT */
 }
 
 void bl2_el3_plat_prepare_exit(void)

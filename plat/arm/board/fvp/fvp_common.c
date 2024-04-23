@@ -1,10 +1,11 @@
 /*
- * Copyright (c) 2013-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2024, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include <assert.h>
+#include <string.h>
 
 #include <common/debug.h>
 #include <drivers/arm/cci.h>
@@ -12,11 +13,13 @@
 #include <drivers/arm/gicv2.h>
 #include <drivers/arm/sp804_delay_timer.h>
 #include <drivers/generic_delay_timer.h>
+#include <fconf_hw_config_getter.h>
 #include <lib/mmio.h>
 #include <lib/smccc.h>
 #include <lib/xlat_tables/xlat_tables_compat.h>
 #include <platform_def.h>
 #include <services/arm_arch_svc.h>
+#include <services/rmm_core_manifest.h>
 #if SPM_MM
 #include <services/spm_mm_partition.h>
 #endif
@@ -30,6 +33,14 @@
 /* Defines for GIC Driver build time selection */
 #define FVP_GICV2		1
 #define FVP_GICV3		2
+
+/* Defines for RMM Console*/
+#define FVP_RMM_CONSOLE_BASE		UL(0x1c0c0000)
+#define FVP_RMM_CONSOLE_BAUD		UL(115200)
+#define FVP_RMM_CONSOLE_CLK_IN_HZ	UL(14745600)
+#define FVP_RMM_CONSOLE_NAME		"pl011"
+
+#define FVP_RMM_CONSOLE_COUNT		UL(1)
 
 /*******************************************************************************
  * arm_config holds the characteristics of the differences between the three FVP
@@ -68,6 +79,14 @@ arm_config_t arm_config;
 					DEVICE2_SIZE,			\
 					MT_DEVICE | MT_RW | MT_SECURE)
 
+#if TRANSFER_LIST
+#ifdef FW_NS_HANDOFF_BASE
+#define MAP_FW_NS_HANDOFF MAP_REGION_FLAT(FW_NS_HANDOFF_BASE, \
+					  FW_HANDOFF_SIZE,    \
+					  MT_MEMORY | MT_RW | MT_NS)
+#endif
+#endif
+
 /*
  * Table of memory regions for various BL stages to map using the MMU.
  * This doesn't include Trusted SRAM as setup_page_tables() already takes care
@@ -104,9 +123,19 @@ const mmap_region_t plat_arm_mmap[] = {
 #ifdef __aarch64__
 	ARM_MAP_DRAM2,
 #endif
-#if defined(SPD_spmd)
+	/*
+	 * Required to load HW_CONFIG, SPMC and SPs to trusted DRAM.
+	 */
 	ARM_MAP_TRUSTED_DRAM,
-#endif
+
+	/*
+	 * Required to load Event Log in TZC secured memory
+	 */
+#if MEASURED_BOOT && (defined(SPD_tspd) || defined(SPD_opteed) || \
+defined(SPD_spmd))
+	ARM_MAP_EVENT_LOG_DRAM1,
+#endif /* MEASURED_BOOT && (SPD_tspd || SPD_opteed || SPD_spmd) */
+
 #if ENABLE_RME
 	ARM_MAP_RMM_DRAM,
 	ARM_MAP_GPT_L1_DRAM,
@@ -117,11 +146,16 @@ const mmap_region_t plat_arm_mmap[] = {
 #if TRUSTED_BOARD_BOOT
 	/* To access the Root of Trust Public Key registers. */
 	MAP_DEVICE2,
-#if !BL2_AT_EL3
-	ARM_MAP_BL1_RW,
-#endif
 #endif /* TRUSTED_BOARD_BOOT */
-#if SPM_MM
+
+#if CRYPTO_SUPPORT && !RESET_TO_BL2
+	/*
+	 * To access shared the Mbed TLS heap while booting the
+	 * system with Crypto support
+	 */
+	ARM_MAP_BL1_RW,
+#endif /* CRYPTO_SUPPORT && !RESET_TO_BL2 */
+#if SPM_MM || SPMC_AT_EL3
 	ARM_SP_IMAGE_MMAP,
 #endif
 #if ARM_BL31_IN_DRAM
@@ -161,10 +195,12 @@ const mmap_region_t plat_arm_mmap[] = {
 #if SPM_MM
 	ARM_SPM_BUF_EL3_MMAP,
 #endif
-	/* Required by fconf APIs to read HW_CONFIG dtb loaded into DRAM */
-	ARM_DTB_DRAM_NS,
 #if ENABLE_RME
 	ARM_MAP_GPT_L1_DRAM,
+	ARM_MAP_EL3_RMM_SHARED_MEM,
+#endif
+#ifdef MAP_FW_NS_HANDOFF
+	MAP_FW_NS_HANDOFF,
 #endif
 	{0}
 };
@@ -172,8 +208,8 @@ const mmap_region_t plat_arm_mmap[] = {
 #if defined(IMAGE_BL31) && SPM_MM
 const mmap_region_t plat_arm_secure_partition_mmap[] = {
 	V2M_MAP_IOFPGA_EL0, /* for the UART */
-	MAP_REGION_FLAT(DEVICE0_BASE,				\
-			DEVICE0_SIZE,				\
+	MAP_REGION_FLAT(DEVICE0_BASE,
+			DEVICE0_SIZE,
 			MT_DEVICE | MT_RO | MT_SECURE | MT_USER),
 	ARM_SP_IMAGE_MMAP,
 	ARM_SP_IMAGE_NS_BUF_MMAP,
@@ -192,8 +228,6 @@ const mmap_region_t plat_arm_mmap[] = {
 	V2M_MAP_IOFPGA,
 	MAP_DEVICE0,
 	MAP_DEVICE1,
-	/* Required by fconf APIs to read HW_CONFIG dtb loaded into DRAM */
-	ARM_DTB_DRAM_NS,
 	{0}
 };
 #endif
@@ -444,7 +478,7 @@ void fvp_interconnect_disable(void)
 #endif
 }
 
-#if TRUSTED_BOARD_BOOT
+#if CRYPTO_SUPPORT
 int plat_get_mbedtls_heap(void **heap_addr, size_t *heap_size)
 {
 	assert(heap_addr != NULL);
@@ -452,7 +486,7 @@ int plat_get_mbedtls_heap(void **heap_addr, size_t *heap_size)
 
 	return arm_get_mbedtls_heap(heap_addr, heap_size);
 }
-#endif
+#endif /* CRYPTO_SUPPORT */
 
 void fvp_timer_init(void)
 {
@@ -510,3 +544,140 @@ int32_t plat_get_soc_revision(void)
 	return (int32_t)(((sys_id >> V2M_SYS_ID_REV_SHIFT) &
 			  V2M_SYS_ID_REV_MASK) & SOC_ID_REV_MASK);
 }
+
+#if ENABLE_RME
+/*
+ * Get a pointer to the RMM-EL3 Shared buffer and return it
+ * through the pointer passed as parameter.
+ *
+ * This function returns the size of the shared buffer.
+ */
+size_t plat_rmmd_get_el3_rmm_shared_mem(uintptr_t *shared)
+{
+	*shared = (uintptr_t)RMM_SHARED_BASE;
+
+	return (size_t)RMM_SHARED_SIZE;
+}
+
+int plat_rmmd_load_manifest(struct rmm_manifest *manifest)
+{
+	uint64_t checksum, num_banks, num_consoles;
+	struct ns_dram_bank *bank_ptr;
+	struct console_info *console_ptr;
+
+	assert(manifest != NULL);
+
+	/* Get number of DRAM banks */
+	num_banks = FCONF_GET_PROPERTY(hw_config, dram_layout, num_banks);
+	assert(num_banks <= ARM_DRAM_NUM_BANKS);
+
+	/* Set number of consoles */
+	num_consoles = FVP_RMM_CONSOLE_COUNT;
+
+	manifest->version = RMMD_MANIFEST_VERSION;
+	manifest->padding = 0U; /* RES0 */
+	manifest->plat_data = (uintptr_t)NULL;
+	manifest->plat_dram.num_banks = num_banks;
+	manifest->plat_console.num_consoles = num_consoles;
+
+	/*
+	 * Boot Manifest structure illustration, with two dram banks and
+	 * a single console.
+	 *
+	 * +----------------------------------------+
+	 * | offset |     field      |    comment   |
+	 * +--------+----------------+--------------+
+	 * |   0    |    version     |  0x00000003  |
+	 * +--------+----------------+--------------+
+	 * |   4    |    padding     |  0x00000000  |
+	 * +--------+----------------+--------------+
+	 * |   8    |   plat_data    |     NULL     |
+	 * +--------+----------------+--------------+
+	 * |   16   |   num_banks    |              |
+	 * +--------+----------------+              |
+	 * |   24   |     banks      |   plat_dram  |
+	 * +--------+----------------+              |
+	 * |   32   |    checksum    |              |
+	 * +--------+----------------+--------------+
+	 * |   40   |  num_consoles  |              |
+	 * +--------+----------------+              |
+	 * |   48   |    consoles    | plat_console |
+	 * +--------+----------------+              |
+	 * |   56   |    checksum    |              |
+	 * +--------+----------------+--------------+
+	 * |   64   |     base 0     |              |
+	 * +--------+----------------+    bank[0]   |
+	 * |   72   |     size 0     |              |
+	 * +--------+----------------+--------------+
+	 * |   80   |     base 1     |              |
+	 * +--------+----------------+    bank[1]   |
+	 * |   88   |     size 1     |              |
+	 * +--------+----------------+--------------+
+	 * |   96   |     base       |              |
+	 * +--------+----------------+              |
+	 * |   104  |   map_pages    |              |
+	 * +--------+----------------+              |
+	 * |   112  |     name       |              |
+	 * +--------+----------------+  consoles[0] |
+	 * |   120  |   clk_in_hz    |              |
+	 * +--------+----------------+              |
+	 * |   128  |   baud_rate    |              |
+	 * +--------+----------------+              |
+	 * |   136  |     flags      |              |
+	 * +--------+----------------+--------------+
+	 */
+
+	bank_ptr = (struct ns_dram_bank *)
+			(((uintptr_t)manifest) + sizeof(*manifest));
+	console_ptr = (struct console_info *)
+			((uintptr_t)bank_ptr + (num_banks * sizeof(*bank_ptr)));
+
+	manifest->plat_dram.banks = bank_ptr;
+	manifest->plat_console.consoles = console_ptr;
+
+	/* Ensure the manifest is not larger than the shared buffer */
+	assert((sizeof(struct rmm_manifest) +
+		(sizeof(struct console_info) * manifest->plat_console.num_consoles) +
+		(sizeof(struct ns_dram_bank) * manifest->plat_dram.num_banks)) <= ARM_EL3_RMM_SHARED_SIZE);
+
+	/* Calculate checksum of plat_dram structure */
+	checksum = num_banks + (uint64_t)bank_ptr;
+
+	/* Store FVP DRAM banks data in Boot Manifest */
+	for (unsigned long i = 0UL; i < num_banks; i++) {
+		uintptr_t base = FCONF_GET_PROPERTY(hw_config, dram_layout, dram_bank[i].base);
+		uint64_t size = FCONF_GET_PROPERTY(hw_config, dram_layout, dram_bank[i].size);
+
+		bank_ptr[i].base = base;
+		bank_ptr[i].size = size;
+
+		/* Update checksum */
+		checksum += base + size;
+	}
+
+	/* Checksum must be 0 */
+	manifest->plat_dram.checksum = ~checksum + 1UL;
+
+	/* Calculate the checksum of the plat_consoles structure */
+	checksum = num_consoles + (uint64_t)console_ptr;
+
+	/* Zero out the console info struct */
+	memset((void *)console_ptr, '\0', sizeof(struct console_info) * num_consoles);
+
+	console_ptr[0].map_pages = 1;
+	console_ptr[0].base = FVP_RMM_CONSOLE_BASE;
+	console_ptr[0].clk_in_hz = FVP_RMM_CONSOLE_CLK_IN_HZ;
+	console_ptr[0].baud_rate = FVP_RMM_CONSOLE_BAUD;
+
+	strlcpy(console_ptr[0].name, FVP_RMM_CONSOLE_NAME, RMM_CONSOLE_MAX_NAME_LEN-1UL);
+
+	/* Update checksum */
+	checksum += console_ptr[0].base + console_ptr[0].map_pages +
+		console_ptr[0].clk_in_hz + console_ptr[0].baud_rate;
+
+	/* Checksum must be 0 */
+	manifest->plat_console.checksum = ~checksum + 1UL;
+
+	return 0;
+}
+#endif	/* ENABLE_RME */

@@ -1,14 +1,16 @@
 /*
- * Copyright (c) 2015-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2024, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+#include <drivers/arm/css/sds.h>
 #include <lib/smccc.h>
-#include <platform_def.h>
+#include <lib/utils_def.h>
 #include <services/arm_arch_svc.h>
 
 #include <plat/arm/common/plat_arm.h>
+#include <platform_def.h>
 
 /*
  * Table of memory regions for different BL stages to map using the MMU.
@@ -50,8 +52,11 @@ const mmap_region_t plat_arm_mmap[] = {
 	ARM_MAP_OPTEE_CORE_MEM,
 	ARM_OPTEE_PAGEABLE_LOAD_MEM,
 #endif
-#if TRUSTED_BOARD_BOOT && !BL2_AT_EL3
+#if TRUSTED_BOARD_BOOT && !RESET_TO_BL2
 	ARM_MAP_BL1_RW,
+#endif
+#ifdef JUNO_ETHOSN_TZMP1
+	JUNO_ETHOSN_PROT_FW_RW,
 #endif
 	{0}
 };
@@ -76,6 +81,9 @@ const mmap_region_t plat_arm_mmap[] = {
 #endif
 	SOC_CSS_MAP_DEVICE,
 	ARM_DTB_DRAM_NS,
+#ifdef JUNO_ETHOSN_TZMP1
+	JUNO_ETHOSN_PROT_FW_RO,
+#endif
 	{0}
 };
 #endif
@@ -132,3 +140,16 @@ int32_t plat_get_soc_revision(void)
 	return (int32_t)(((sys_id >> V2M_SYS_ID_REV_SHIFT) &
 			  V2M_SYS_ID_REV_MASK) & SOC_ID_REV_MASK);
 }
+
+#if CSS_USE_SCMI_SDS_DRIVER
+static sds_region_desc_t juno_sds_regions[] = {
+	{ .base = PLAT_ARM_SDS_MEM_BASE },
+};
+
+sds_region_desc_t *plat_sds_get_regions(unsigned int *region_count)
+{
+	*region_count = ARRAY_SIZE(juno_sds_regions);
+
+	return juno_sds_regions;
+}
+#endif /* CSS_USE_SCMI_SDS_DRIVER */

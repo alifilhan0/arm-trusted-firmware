@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, Arm Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2022, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -8,6 +8,8 @@
 #include <asm_macros.S>
 
 	.globl	flush_dcache_range
+	.globl	flush_dcache_to_popa_range
+	.globl	flush_dcache_to_popa_range_mte2
 	.globl	clean_dcache_range
 	.globl	inv_dcache_range
 	.globl	dcsw_op_louis
@@ -15,6 +17,20 @@
 	.globl	dcsw_op_level1
 	.globl	dcsw_op_level2
 	.globl	dcsw_op_level3
+
+/* Opcodes for data cache maintenance by PA instructions. */
+
+/*
+ * sys  #6, c7, c14, #1, x0
+ * DC CIPAPA, X0
+ */
+#define dc_cipapa_x0	0xd50e7e20
+
+/*
+ * sys #6, c7, c14, #3, x0
+ * DC CIDGPAPA, X0
+  */
+#define dc_cigdpapa_x0	0xd50e7ea0
 
 /*
  * This macro can be used for implementing various data cache operations `op`
@@ -35,33 +51,97 @@ loop_\op:
 exit_loop_\op:
 	ret
 .endm
-	/* ------------------------------------------
-	 * Clean+Invalidate from base address till
-	 * size. 'x0' = addr, 'x1' = size
-	 * ------------------------------------------
+
+/* op: the hexadecimal instruction opcode for the cache operation */
+.macro do_dcache_maintenance_instr op
+	/* Exit early if size is zero */
+	cbz	x1, exit_loop_\op
+	dcache_line_size x2, x3
+	sub	x3, x2, #1
+	bic	x0, x0, x3
+	add	x1, x1, x0
+loop_\op:
+	.inst	\op
+	add	x0, x0, x2
+	cmp	x0, x1
+	b.lo	loop_\op
+	dsb	osh
+exit_loop_\op:
+	ret
+.endm
+
+.macro check_plat_can_cmo
+#if CONDITIONAL_CMO
+	mov	x3, x30
+	mov	x2, x0
+	bl	plat_can_cmo
+	mov	x30, x3
+	cbnz	x0, 1f
+	ret
+1:
+	mov	 x0, x2
+#endif
+.endm
+
+	/* -------------------------------------------
+	 * DCache Clean+Invalidate by MVA from base
+	 * address till size. 'x0' = addr, 'x1' = size
+	 * -------------------------------------------
 	 */
 func flush_dcache_range
+	check_plat_can_cmo
 	do_dcache_maintenance_by_mva civac
 endfunc flush_dcache_range
 
 	/* ------------------------------------------
-	 * Clean from base address till size.
-	 * 'x0' = addr, 'x1' = size
+	 * DCache Clean by MVA from base address till
+	 * size. 'x0' = addr, 'x1' = size
 	 * ------------------------------------------
 	 */
 func clean_dcache_range
+	check_plat_can_cmo
 	do_dcache_maintenance_by_mva cvac
 endfunc clean_dcache_range
 
 	/* ------------------------------------------
-	 * Invalidate from base address till
-	 * size. 'x0' = addr, 'x1' = size
+	 * DCache Invalidate by MVA from base address
+	 * till size. 'x0' = addr, 'x1' = size
 	 * ------------------------------------------
 	 */
 func inv_dcache_range
+	check_plat_can_cmo
 	do_dcache_maintenance_by_mva ivac
 endfunc inv_dcache_range
 
+	/*
+	 * ------------------------------------------
+	 * DCache Clean+Invalidate by PA to POPA from
+	 * base address till size.
+	 * 'x0' = addr, 'x1' = size
+	 * ------------------------------------------
+	 */
+func flush_dcache_to_popa_range
+	check_plat_can_cmo
+	/* dc cipapa, x0 */
+	do_dcache_maintenance_instr dc_cipapa_x0
+endfunc	flush_dcache_to_popa_range
+
+	/*
+	 * ------------------------------------------
+	 * Clean+Invalidate by PA to POPA (MTE2)
+	 * from base address till size.
+	 * 'x0' = addr, 'x1' = size
+	 * ------------------------------------------
+	 * On implementations with FEAT_MTE2, Root firmware must issue
+	 * DC_CIGDPAPA instead of DC_CIPAPA, in order to additionally
+	 * clean and invalidate Allocation Tags associated with the
+	 * affected locations.
+	 */
+func flush_dcache_to_popa_range_mte2
+	check_plat_can_cmo
+	/* dc cigdpapa, x0 */
+	do_dcache_maintenance_instr dc_cigdpapa_x0
+endfunc	flush_dcache_to_popa_range_mte2
 
 	/* ---------------------------------------------------------------
 	 * Data cache operations by set/way to the level specified
@@ -170,11 +250,13 @@ dcsw_loop_table:
 
 
 func dcsw_op_louis
+	check_plat_can_cmo
 	dcsw_op #LOUIS_SHIFT, #CLIDR_FIELD_WIDTH, #LEVEL_SHIFT
 endfunc dcsw_op_louis
 
 
 func dcsw_op_all
+	check_plat_can_cmo
 	dcsw_op #LOC_SHIFT, #CLIDR_FIELD_WIDTH, #LEVEL_SHIFT
 endfunc dcsw_op_all
 
@@ -198,6 +280,7 @@ endfunc dcsw_op_all
 	 * ---------------------------------------------------------------
 	 */
 func dcsw_op_level1
+	check_plat_can_cmo
 	dcsw_op_level #(1 << LEVEL_SHIFT)
 endfunc dcsw_op_level1
 
@@ -209,6 +292,7 @@ endfunc dcsw_op_level1
 	 * ---------------------------------------------------------------
 	 */
 func dcsw_op_level2
+	check_plat_can_cmo
 	dcsw_op_level #(2 << LEVEL_SHIFT)
 endfunc dcsw_op_level2
 
@@ -220,5 +304,6 @@ endfunc dcsw_op_level2
 	 * ---------------------------------------------------------------
 	 */
 func dcsw_op_level3
+	check_plat_can_cmo
 	dcsw_op_level #(3 << LEVEL_SHIFT)
 endfunc dcsw_op_level3

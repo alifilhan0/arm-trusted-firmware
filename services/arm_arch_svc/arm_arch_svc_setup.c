@@ -1,14 +1,15 @@
 /*
- * Copyright (c) 2018-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2023, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include <common/debug.h>
 #include <common/runtime_svc.h>
-#include <lib/cpus/errata_report.h>
+#include <lib/cpus/errata.h>
 #include <lib/cpus/wa_cve_2017_5715.h>
 #include <lib/cpus/wa_cve_2018_3639.h>
+#include <lib/cpus/wa_cve_2022_23960.h>
 #include <lib/smccc.h>
 #include <services/arm_arch_svc.h>
 #include <smccc_helpers.h>
@@ -27,6 +28,8 @@ static int32_t smccc_arch_features(u_register_t arg1)
 		return SMC_ARCH_CALL_SUCCESS;
 	case SMCCC_ARCH_SOC_ID:
 		return plat_is_smccc_feature_available(arg1);
+#ifdef __aarch64__
+	/* Workaround checks are currently only implemented for aarch64 */
 #if WORKAROUND_CVE_2017_5715
 	case SMCCC_ARCH_WORKAROUND_1:
 		if (check_wa_cve_2017_5715() == ERRATA_NOT_APPLIES)
@@ -74,6 +77,21 @@ static int32_t smccc_arch_features(u_register_t arg1)
 	}
 #endif
 
+#if (WORKAROUND_CVE_2022_23960 || WORKAROUND_CVE_2017_5715)
+	case SMCCC_ARCH_WORKAROUND_3:
+		/*
+		 * SMCCC_ARCH_WORKAROUND_3 should also take into account
+		 * CVE-2017-5715 since this SMC can be used instead of
+		 * SMCCC_ARCH_WORKAROUND_1.
+		 */
+		if ((check_smccc_arch_wa3_applies() == ERRATA_NOT_APPLIES) &&
+		    (check_wa_cve_2017_5715() == ERRATA_NOT_APPLIES)) {
+			return 1;
+		}
+		return 0; /* ERRATA_APPLIES || ERRATA_MISSING */
+#endif
+#endif /* __aarch64__ */
+
 	/* Fallthrough */
 
 	default:
@@ -113,11 +131,12 @@ static uintptr_t arm_arch_svc_smc_handler(uint32_t smc_fid,
 		SMC_RET1(handle, smccc_arch_features(x1));
 	case SMCCC_ARCH_SOC_ID:
 		SMC_RET1(handle, smccc_arch_id(x1));
+#ifdef __aarch64__
 #if WORKAROUND_CVE_2017_5715
 	case SMCCC_ARCH_WORKAROUND_1:
 		/*
 		 * The workaround has already been applied on affected PEs
-		 * during entry to EL3.  On unaffected PEs, this function
+		 * during entry to EL3. On unaffected PEs, this function
 		 * has no effect.
 		 */
 		SMC_RET0(handle);
@@ -132,6 +151,16 @@ static uintptr_t arm_arch_svc_smc_handler(uint32_t smc_fid,
 		 */
 		SMC_RET0(handle);
 #endif
+#if (WORKAROUND_CVE_2022_23960 || WORKAROUND_CVE_2017_5715)
+	case SMCCC_ARCH_WORKAROUND_3:
+		/*
+		 * The workaround has already been applied on affected PEs
+		 * during entry to EL3. On unaffected PEs, this function
+		 * has no effect.
+		 */
+		SMC_RET0(handle);
+#endif
+#endif /* __aarch64__ */
 	default:
 		WARN("Unimplemented Arm Architecture Service Call: 0x%x \n",
 			smc_fid);

@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2013-2021, ARM Limited and Contributors. All rights reserved.
+# Copyright (c) 2013-2024, Arm Limited and Contributors. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -18,21 +18,29 @@ ifeq (${SPM_MM},1)
     $(error EL3_EXCEPTION_HANDLING must be 1 for SPM-MM support)
   else
     $(info Including SPM Management Mode (MM) makefile)
-    include services/std_svc/spm_mm/spm_mm.mk
+    include services/std_svc/spm/common/spm.mk
+    include services/std_svc/spm/spm_mm/spm_mm.mk
   endif
 endif
 
 include lib/extensions/amu/amu.mk
 include lib/mpmm/mpmm.mk
+
+ifeq (${SPMC_AT_EL3},1)
+  $(info Including EL3 SPMC makefile)
+  include services/std_svc/spm/common/spm.mk
+  include services/std_svc/spm/el3_spmc/spmc.mk
+endif
+
 include lib/psci/psci_lib.mk
 
 BL31_SOURCES		+=	bl31/bl31_main.c				\
 				bl31/interrupt_mgmt.c				\
 				bl31/aarch64/bl31_entrypoint.S			\
 				bl31/aarch64/crash_reporting.S			\
-				bl31/aarch64/ea_delegate.S			\
 				bl31/aarch64/runtime_exceptions.S		\
 				bl31/bl31_context_mgmt.c			\
+				bl31/bl31_traps.c				\
 				common/runtime_svc.c				\
 				lib/cpus/aarch64/dsu_helpers.S			\
 				plat/common/aarch64/platform_mp_stack.S		\
@@ -40,11 +48,9 @@ BL31_SOURCES		+=	bl31/bl31_main.c				\
 				services/std_svc/std_svc_setup.c		\
 				${PSCI_LIB_SOURCES}				\
 				${SPMD_SOURCES}					\
+				${SPM_MM_SOURCES}				\
+				${SPMC_SOURCES}					\
 				${SPM_SOURCES}
-
-ifeq (${DISABLE_MTPMU},1)
-BL31_SOURCES		+=	lib/extensions/mtpmu/aarch64/mtpmu.S
-endif
 
 ifeq (${ENABLE_PMF}, 1)
 BL31_SOURCES		+=	lib/pmf/pmf_main.c
@@ -55,8 +61,16 @@ ifeq (${USE_DEBUGFS},1)
 	BL31_SOURCES	+= $(DEBUGFS_SRCS)
 endif
 
+ifeq (${PLATFORM_REPORT_CTX_MEM_USE},1)
+BL31_SOURCES		+=	lib/el3_runtime/aarch64/context_debug.c
+endif
+
 ifeq (${EL3_EXCEPTION_HANDLING},1)
 BL31_SOURCES		+=	bl31/ehf.c
+endif
+
+ifeq (${FFH_SUPPORT},1)
+BL31_SOURCES		+=	bl31/aarch64/ea_delegate.S
 endif
 
 ifeq (${SDEI_SUPPORT},1)
@@ -75,11 +89,15 @@ BL31_SOURCES		+=	services/std_svc/trng/trng_main.c	\
 				services/std_svc/trng/trng_entropy_pool.c
 endif
 
-ifeq (${ENABLE_SPE_FOR_LOWER_ELS},1)
+ifneq (${ENABLE_SPE_FOR_NS},0)
 BL31_SOURCES		+=	lib/extensions/spe/spe.c
 endif
 
-ifeq (${ENABLE_AMU},1)
+ifeq (${ERRATA_ABI_SUPPORT},1)
+BL31_SOURCES		+=	services/std_svc/errata_abi/errata_abi_main.c
+endif
+
+ifneq (${ENABLE_FEAT_AMU},0)
 BL31_SOURCES		+=	${AMU_SOURCES}
 endif
 
@@ -87,28 +105,30 @@ ifeq (${ENABLE_MPMM},1)
 BL31_SOURCES		+=	${MPMM_SOURCES}
 endif
 
-ifeq (${ENABLE_SME_FOR_NS},1)
+ifneq (${ENABLE_SME_FOR_NS},0)
 BL31_SOURCES		+=	lib/extensions/sme/sme.c
-BL31_SOURCES		+=	lib/extensions/sve/sve.c
-else
-ifeq (${ENABLE_SVE_FOR_NS},1)
-BL31_SOURCES		+=	lib/extensions/sve/sve.c
 endif
+ifneq (${ENABLE_SVE_FOR_NS},0)
+BL31_SOURCES		+=	lib/extensions/sve/sve.c
 endif
 
-ifeq (${ENABLE_MPAM_FOR_LOWER_ELS},1)
+ifneq (${ENABLE_FEAT_MPAM},0)
 BL31_SOURCES		+=	lib/extensions/mpam/mpam.c
 endif
 
-ifeq (${ENABLE_TRBE_FOR_NS},1)
+ifneq (${ENABLE_TRBE_FOR_NS},0)
 BL31_SOURCES		+=	lib/extensions/trbe/trbe.c
 endif
 
-ifeq (${ENABLE_SYS_REG_TRACE_FOR_NS},1)
+ifneq (${ENABLE_BRBE_FOR_NS},0)
+BL31_SOURCES		+=	lib/extensions/brbe/brbe.c
+endif
+
+ifneq (${ENABLE_SYS_REG_TRACE_FOR_NS},0)
 BL31_SOURCES		+=      lib/extensions/sys_reg_trace/aarch64/sys_reg_trace.c
 endif
 
-ifeq (${ENABLE_TRF_FOR_NS},1)
+ifneq (${ENABLE_TRF_FOR_NS},0)
 BL31_SOURCES		+=	lib/extensions/trf/aarch64/trf.c
 endif
 
@@ -128,7 +148,30 @@ BL31_SOURCES		+=	${GPT_LIB_SRCS}					\
 				${RMMD_SOURCES}
 endif
 
-BL31_LINKERFILE		:=	bl31/bl31.ld.S
+ifeq ($(FEATURE_DETECTION),1)
+BL31_SOURCES		+=	common/feat_detect.c
+endif
+
+ifeq (${DRTM_SUPPORT},1)
+BL31_SOURCES		+=	services/std_svc/drtm/drtm_main.c		\
+				services/std_svc/drtm/drtm_dma_prot.c		\
+				services/std_svc/drtm/drtm_res_address_map.c	\
+				services/std_svc/drtm/drtm_measurements.c	\
+				services/std_svc/drtm/drtm_remediation.c	\
+				${MBEDTLS_SOURCES}
+endif
+
+ifeq ($(CROS_WIDEVINE_SMC),1)
+BL31_SOURCES		+=	services/oem/chromeos/widevine_smc_handlers.c
+endif
+
+BL31_DEFAULT_LINKER_SCRIPT_SOURCE := bl31/bl31.ld.S
+
+ifeq ($($(ARCH)-ld-id),gnu-gcc)
+        BL31_LDFLAGS	+=	-Wl,--sort-section=alignment
+else ifneq ($(filter llvm-lld gnu-ld,$($(ARCH)-ld-id)),)
+        BL31_LDFLAGS	+=	--sort-section=alignment
+endif
 
 # Flag used to indicate if Crash reporting via console should be included
 # in BL31. This defaults to being present in DEBUG builds only

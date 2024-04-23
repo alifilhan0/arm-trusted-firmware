@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2023, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -10,18 +10,21 @@
 #include <arch_helpers.h>
 #include <common/debug.h>
 #include <common/desc_image_load.h>
+#include <drivers/fwu/fwu.h>
+#include <drivers/fwu/fwu_metadata.h>
 #include <drivers/io/io_block.h>
 #include <drivers/io/io_driver.h>
+#include <drivers/io/io_encrypted.h>
 #include <drivers/io/io_fip.h>
 #include <drivers/io/io_memmap.h>
 #include <drivers/io/io_mtd.h>
 #include <drivers/io/io_storage.h>
 #include <drivers/mmc.h>
+#include <drivers/partition/efi.h>
 #include <drivers/partition/partition.h>
 #include <drivers/raw_nand.h>
 #include <drivers/spi_nand.h>
 #include <drivers/spi_nor.h>
-#include <drivers/st/io_mmc.h>
 #include <drivers/st/stm32_fmc2_nand.h>
 #include <drivers/st/stm32_qspi.h>
 #include <drivers/st/stm32_sdmmc2.h>
@@ -34,7 +37,9 @@
 
 #include <platform_def.h>
 #include <stm32cubeprogrammer.h>
+#include <stm32mp_efi.h>
 #include <stm32mp_fconf_getter.h>
+#include <stm32mp_io_storage.h>
 #include <usb_dfu.h>
 
 /* IO devices */
@@ -43,10 +48,15 @@ uintptr_t storage_dev_handle;
 
 static const io_dev_connector_t *fip_dev_con;
 
+#ifndef DECRYPTION_SUPPORT_none
+static const io_dev_connector_t *enc_dev_con;
+uintptr_t enc_dev_handle;
+#endif
+
 #if STM32MP_SDMMC || STM32MP_EMMC
 static struct mmc_device_info mmc_info;
 
-static uint32_t block_buffer[MMC_BLOCK_SIZE] __aligned(MMC_BLOCK_SIZE);
+static uint8_t block_buffer[MMC_BLOCK_SIZE] __aligned(MMC_BLOCK_SIZE);
 
 static io_block_dev_spec_t mmc_block_dev_spec = {
 	/* It's used as temp buffer in block driver */
@@ -113,10 +123,64 @@ int open_fip(const uintptr_t spec)
 	return io_dev_init(fip_dev_handle, (uintptr_t)FIP_IMAGE_ID);
 }
 
+#ifndef DECRYPTION_SUPPORT_none
+int open_enc_fip(const uintptr_t spec)
+{
+	int result;
+	uintptr_t local_image_handle;
+
+	result = io_dev_init(enc_dev_handle, (uintptr_t)ENC_IMAGE_ID);
+	if (result != 0) {
+		return result;
+	}
+
+	result = io_open(enc_dev_handle, spec, &local_image_handle);
+	if (result != 0) {
+		return result;
+	}
+
+	VERBOSE("Using encrypted FIP\n");
+	io_close(local_image_handle);
+
+	return 0;
+}
+#endif
+
 int open_storage(const uintptr_t spec)
 {
 	return io_dev_init(storage_dev_handle, 0);
 }
+
+#if STM32MP_EMMC_BOOT
+static uint32_t get_boot_part_fip_header(void)
+{
+	io_block_spec_t emmc_boot_fip_block_spec = {
+		.offset = STM32MP_EMMC_BOOT_FIP_OFFSET,
+		.length = MMC_BLOCK_SIZE, /* We are interested only in first 4 bytes */
+	};
+	uint32_t magic = 0U;
+	int io_result;
+	size_t bytes_read;
+	uintptr_t fip_hdr_handle;
+
+	io_result = io_open(storage_dev_handle, (uintptr_t)&emmc_boot_fip_block_spec,
+			    &fip_hdr_handle);
+	assert(io_result == 0);
+
+	io_result = io_read(fip_hdr_handle, (uintptr_t)&magic, sizeof(magic),
+			    &bytes_read);
+	if ((io_result != 0) || (bytes_read != sizeof(magic))) {
+		panic();
+	}
+
+	io_close(fip_hdr_handle);
+
+	VERBOSE("%s: eMMC boot magic at offset 256K: %08x\n",
+		__func__, magic);
+
+	return magic;
+}
+#endif
 
 static void print_boot_device(boot_api_context_t *boot_context)
 {
@@ -127,13 +191,13 @@ static void print_boot_device(boot_api_context_t *boot_context)
 	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_EMMC:
 		INFO("Using EMMC\n");
 		break;
-	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NOR_QSPI:
-		INFO("Using QSPI NOR\n");
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NOR_SPI:
+		INFO("Using SPI NOR\n");
 		break;
 	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NAND_FMC:
 		INFO("Using FMC NAND\n");
 		break;
-	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NAND_QSPI:
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NAND_SPI:
 		INFO("Using SPI NAND\n");
 		break;
 	case BOOT_API_CTX_BOOT_INTERFACE_SEL_SERIAL_UART:
@@ -158,7 +222,7 @@ static void print_boot_device(boot_api_context_t *boot_context)
 static void boot_mmc(enum mmc_device_type mmc_dev_type,
 		     uint16_t boot_interface_instance)
 {
-	int io_result __unused;
+	int io_result __maybe_unused;
 	struct stm32_sdmmc2_params params;
 
 	zeromem(&params, sizeof(struct stm32_sdmmc2_params));
@@ -185,13 +249,17 @@ static void boot_mmc(enum mmc_device_type mmc_dev_type,
 		break;
 	}
 
+	if (mmc_dev_type != MMC_IS_EMMC) {
+		params.flags = MMC_FLAG_SD_CMD6;
+	}
+
 	params.device_info = &mmc_info;
 	if (stm32_sdmmc2_mmc_init(&params) != 0) {
 		ERROR("SDMMC%u init failed\n", boot_interface_instance);
 		panic();
 	}
 
-	/* Open MMC as a block device to read GPT table */
+	/* Open MMC as a block device to read FIP */
 	io_result = register_io_dev_block(&mmc_dev_con);
 	if (io_result != 0) {
 		panic();
@@ -200,13 +268,33 @@ static void boot_mmc(enum mmc_device_type mmc_dev_type,
 	io_result = io_dev_open(mmc_dev_con, (uintptr_t)&mmc_block_dev_spec,
 				&storage_dev_handle);
 	assert(io_result == 0);
+
+#if STM32MP_EMMC_BOOT
+	if (mmc_dev_type == MMC_IS_EMMC) {
+		io_result = mmc_part_switch_current_boot();
+		assert(io_result == 0);
+
+		if (get_boot_part_fip_header() != TOC_HEADER_NAME) {
+			WARN("%s: Can't find FIP header on eMMC boot partition. Trying GPT\n",
+			     __func__);
+			io_result = mmc_part_switch_user();
+			assert(io_result == 0);
+			return;
+		}
+
+		VERBOSE("%s: FIP header found on eMMC boot partition\n",
+			__func__);
+		image_block_spec.offset = STM32MP_EMMC_BOOT_FIP_OFFSET;
+		image_block_spec.length = mmc_boot_part_size() - STM32MP_EMMC_BOOT_FIP_OFFSET;
+	}
+#endif
 }
 #endif /* STM32MP_SDMMC || STM32MP_EMMC */
 
 #if STM32MP_SPI_NOR
 static void boot_spi_nor(boot_api_context_t *boot_context)
 {
-	int io_result __unused;
+	int io_result __maybe_unused;
 
 	io_result = stm32_qspi_init();
 	assert(io_result == 0);
@@ -225,7 +313,7 @@ static void boot_spi_nor(boot_api_context_t *boot_context)
 #if STM32MP_RAW_NAND
 static void boot_fmc2_nand(boot_api_context_t *boot_context)
 {
-	int io_result __unused;
+	int io_result __maybe_unused;
 
 	io_result = stm32_fmc2_init();
 	assert(io_result == 0);
@@ -244,7 +332,7 @@ static void boot_fmc2_nand(boot_api_context_t *boot_context)
 #if STM32MP_SPI_NAND
 static void boot_spi_nand(boot_api_context_t *boot_context)
 {
-	int io_result __unused;
+	int io_result __maybe_unused;
 
 	io_result = stm32_qspi_init();
 	assert(io_result == 0);
@@ -263,7 +351,7 @@ static void boot_spi_nand(boot_api_context_t *boot_context)
 #if STM32MP_UART_PROGRAMMER || STM32MP_USB_PROGRAMMER
 static void mmap_io_setup(void)
 {
-	int io_result __unused;
+	int io_result __maybe_unused;
 
 	io_result = register_io_dev_memmap(&memmap_dev_con);
 	assert(io_result == 0);
@@ -276,7 +364,7 @@ static void mmap_io_setup(void)
 #if STM32MP_UART_PROGRAMMER
 static void stm32cubeprogrammer_uart(void)
 {
-	int ret __unused;
+	int ret __maybe_unused;
 	boot_api_context_t *boot_context =
 		(boot_api_context_t *)stm32mp_get_boot_ctx_address();
 	uintptr_t uart_base;
@@ -290,7 +378,7 @@ static void stm32cubeprogrammer_uart(void)
 #if STM32MP_USB_PROGRAMMER
 static void stm32cubeprogrammer_usb(void)
 {
-	int ret __unused;
+	int ret __maybe_unused;
 	struct usb_handle *pdev;
 
 	/* Init USB on platform */
@@ -302,10 +390,9 @@ static void stm32cubeprogrammer_usb(void)
 #endif
 #endif /* STM32MP_UART_PROGRAMMER || STM32MP_USB_PROGRAMMER */
 
-
 void stm32mp_io_setup(void)
 {
-	int io_result __unused;
+	int io_result __maybe_unused;
 	boot_api_context_t *boot_context =
 		(boot_api_context_t *)stm32mp_get_boot_ctx_address();
 
@@ -323,6 +410,15 @@ void stm32mp_io_setup(void)
 	io_result = io_dev_open(fip_dev_con, (uintptr_t)NULL,
 				&fip_dev_handle);
 
+#ifndef DECRYPTION_SUPPORT_none
+	io_result = register_io_dev_enc(&enc_dev_con);
+	assert(io_result == 0);
+
+	io_result = io_dev_open(enc_dev_con, (uintptr_t)NULL,
+				&enc_dev_handle);
+	assert(io_result == 0);
+#endif
+
 	switch (boot_context->boot_interface_selected) {
 #if STM32MP_SDMMC
 	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_SD:
@@ -337,7 +433,7 @@ void stm32mp_io_setup(void)
 		break;
 #endif
 #if STM32MP_SPI_NOR
-	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NOR_QSPI:
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NOR_SPI:
 		dmbsy();
 		boot_spi_nor(boot_context);
 		break;
@@ -349,7 +445,7 @@ void stm32mp_io_setup(void)
 		break;
 #endif
 #if STM32MP_SPI_NAND
-	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NAND_QSPI:
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NAND_SPI:
 		dmbsy();
 		boot_spi_nand(boot_context);
 		break;
@@ -376,30 +472,49 @@ void stm32mp_io_setup(void)
 
 int bl2_plat_handle_pre_image_load(unsigned int image_id)
 {
-	static bool gpt_init_done __unused;
+	static bool gpt_init_done __maybe_unused;
 	uint16_t boot_itf = stm32mp_get_boot_itf_selected();
 
 	switch (boot_itf) {
 #if STM32MP_SDMMC || STM32MP_EMMC
-	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_SD:
 	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_EMMC:
+#if STM32MP_EMMC_BOOT
+		if (image_block_spec.offset == STM32MP_EMMC_BOOT_FIP_OFFSET) {
+			break;
+		}
+#endif
+		/* fallthrough */
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_SD:
 		if (!gpt_init_done) {
+/*
+ * With FWU Multi Bank feature enabled, the selection of
+ * the image to boot will be done by fwu_init calling the
+ * platform hook, plat_fwu_set_images_source.
+ */
+#if !PSA_FWU_SUPPORT
 			const partition_entry_t *entry;
+			const struct efi_guid fip_guid = STM32MP_FIP_GUID;
 
 			partition_init(GPT_IMAGE_ID);
-			entry = get_partition_entry(FIP_IMAGE_NAME);
+			entry = get_partition_entry_by_type(&fip_guid);
 			if (entry == NULL) {
-				ERROR("Could NOT find the %s partition!\n",
-				      FIP_IMAGE_NAME);
-				return -ENOENT;
+				entry = get_partition_entry(FIP_IMAGE_NAME);
+				if (entry == NULL) {
+					ERROR("Could NOT find the %s partition!\n",
+					      FIP_IMAGE_NAME);
+
+					return -ENOENT;
+				}
 			}
 
 			image_block_spec.offset = entry->start;
 			image_block_spec.length = entry->length;
-
+#endif
 			gpt_init_done = true;
 		} else {
 			bl_mem_params_node_t *bl_mem_params = get_bl_mem_params_node(image_id);
+
+			assert(bl_mem_params != NULL);
 
 			mmc_block_dev_spec.buffer.offset = bl_mem_params->image_info.image_base;
 			mmc_block_dev_spec.buffer.length = bl_mem_params->image_info.image_max_size;
@@ -413,15 +528,22 @@ int bl2_plat_handle_pre_image_load(unsigned int image_id)
 	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NAND_FMC:
 #endif
 #if STM32MP_SPI_NAND
-	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NAND_QSPI:
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NAND_SPI:
 #endif
 		image_block_spec.offset = STM32MP_NAND_FIP_OFFSET;
 		break;
 #endif
 
 #if STM32MP_SPI_NOR
-	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NOR_QSPI:
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NOR_SPI:
+/*
+ * With FWU Multi Bank feature enabled, the selection of
+ * the image to boot will be done by fwu_init calling the
+ * platform hook, plat_fwu_set_images_source.
+ */
+#if !PSA_FWU_SUPPORT
 		image_block_spec.offset = STM32MP_NOR_FIP_OFFSET;
+#endif
 		break;
 #endif
 
@@ -473,3 +595,191 @@ int plat_get_image_source(unsigned int image_id, uintptr_t *dev_handle,
 
 	return rc;
 }
+
+#if (STM32MP_SDMMC || STM32MP_EMMC || STM32MP_SPI_NOR) && PSA_FWU_SUPPORT
+/*
+ * In each boot in non-trial mode, we set the BKP register to
+ * FWU_MAX_TRIAL_REBOOT, and return the active_index from metadata.
+ *
+ * As long as the update agent didn't update the "accepted" field in metadata
+ * (i.e. we are in trial mode), we select the new active_index.
+ * To avoid infinite boot loop at trial boot we decrement a BKP register.
+ * If this counter is 0:
+ *     - an unexpected TAMPER event raised (that resets the BKP registers to 0)
+ *     - a power-off occurs before the update agent was able to update the
+ *       "accepted' field
+ *     - we already boot FWU_MAX_TRIAL_REBOOT times in trial mode.
+ * we select the previous_active_index.
+ */
+uint32_t plat_fwu_get_boot_idx(void)
+{
+	/*
+	 * Select boot index and update boot counter only once per boot
+	 * even if this function is called several times.
+	 */
+	static uint32_t boot_idx = INVALID_BOOT_IDX;
+
+	if (boot_idx == INVALID_BOOT_IDX) {
+		const struct fwu_metadata *data = fwu_get_metadata();
+
+		boot_idx = data->active_index;
+
+		if (data->bank_state[boot_idx] == FWU_BANK_STATE_VALID) {
+			if (stm32_get_and_dec_fwu_trial_boot_cnt() == 0U) {
+				WARN("Trial FWU fails %u times\n",
+				     FWU_MAX_TRIAL_REBOOT);
+				boot_idx = fwu_get_alternate_boot_bank();
+			}
+		} else if (data->bank_state[boot_idx] ==
+			   FWU_BANK_STATE_ACCEPTED) {
+			stm32_set_max_fwu_trial_boot_cnt();
+		} else {
+			ERROR("The active bank(%u) of the platform is in Invalid State.\n",
+				boot_idx);
+			boot_idx = fwu_get_alternate_boot_bank();
+			stm32_clear_fwu_trial_boot_cnt();
+		}
+	}
+
+	return boot_idx;
+}
+
+static void *stm32_get_image_spec(const struct efi_guid *img_type_guid)
+{
+	unsigned int i;
+
+	for (i = 0U; i < MAX_NUMBER_IDS; i++) {
+		if ((guidcmp(&policies[i].img_type_guid, img_type_guid)) == 0) {
+			return (void *)policies[i].image_spec;
+		}
+	}
+
+	return NULL;
+}
+
+void plat_fwu_set_images_source(const struct fwu_metadata *metadata)
+{
+	unsigned int i;
+	uint32_t boot_idx;
+	const partition_entry_t *entry __maybe_unused;
+	const struct fwu_image_entry *img_entry;
+	const void *img_type_guid;
+	const void *img_guid;
+	io_block_spec_t *image_spec;
+	const uint16_t boot_itf = stm32mp_get_boot_itf_selected();
+
+	boot_idx = plat_fwu_get_boot_idx();
+	assert(boot_idx < NR_OF_FW_BANKS);
+	VERBOSE("Selecting to boot from bank %u\n", boot_idx);
+
+	img_entry = (void *)&metadata->fw_desc.img_entry;
+	for (i = 0U; i < NR_OF_IMAGES_IN_FW_BANK; i++) {
+		img_type_guid = &img_entry[i].img_type_guid;
+
+		img_guid = &img_entry[i].img_bank_info[boot_idx].img_guid;
+
+		image_spec = stm32_get_image_spec(img_type_guid);
+		if (image_spec == NULL) {
+			ERROR("Unable to get image spec for the image in the metadata\n");
+			panic();
+		}
+
+		switch (boot_itf) {
+#if (STM32MP_SDMMC || STM32MP_EMMC)
+		case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_SD:
+		case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_EMMC:
+			entry = get_partition_entry_by_guid(img_guid);
+			if (entry == NULL) {
+				ERROR("No partition with the uuid mentioned in metadata\n");
+				panic();
+			}
+
+			image_spec->offset = entry->start;
+			image_spec->length = entry->length;
+			break;
+#endif
+#if STM32MP_SPI_NOR
+		case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NOR_SPI:
+			if (guidcmp(img_guid, &STM32MP_NOR_FIP_A_GUID) == 0) {
+				image_spec->offset = STM32MP_NOR_FIP_A_OFFSET;
+			} else if (guidcmp(img_guid, &STM32MP_NOR_FIP_B_GUID) == 0) {
+				image_spec->offset = STM32MP_NOR_FIP_B_OFFSET;
+			} else {
+				ERROR("Invalid uuid mentioned in metadata\n");
+				panic();
+			}
+			break;
+#endif
+		default:
+			panic();
+			break;
+		}
+	}
+}
+
+static int plat_set_image_source(unsigned int image_id,
+				 uintptr_t *handle,
+				 uintptr_t *image_spec)
+{
+	struct plat_io_policy *policy;
+	io_block_spec_t *spec __maybe_unused;
+	const partition_entry_t *entry __maybe_unused;
+	const uint16_t boot_itf = stm32mp_get_boot_itf_selected();
+
+	policy = &policies[image_id];
+	spec = (io_block_spec_t *)policy->image_spec;
+
+	switch (boot_itf) {
+#if (STM32MP_SDMMC || STM32MP_EMMC)
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_SD:
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_EMMC:
+		partition_init(GPT_IMAGE_ID);
+
+		if (image_id == FWU_METADATA_IMAGE_ID) {
+			entry = get_partition_entry(METADATA_PART_1);
+		} else {
+			entry = get_partition_entry(METADATA_PART_2);
+		}
+
+		if (entry == NULL) {
+			ERROR("Unable to find a metadata partition\n");
+			return -ENOENT;
+		}
+
+		spec->offset = entry->start;
+		spec->length = entry->length;
+		break;
+#endif
+
+#if STM32MP_SPI_NOR
+	case BOOT_API_CTX_BOOT_INTERFACE_SEL_FLASH_NOR_SPI:
+		if (image_id == FWU_METADATA_IMAGE_ID) {
+			spec->offset = STM32MP_NOR_METADATA1_OFFSET;
+		} else {
+			spec->offset = STM32MP_NOR_METADATA2_OFFSET;
+		}
+
+		spec->length = sizeof(struct fwu_metadata);
+		break;
+#endif
+	default:
+		panic();
+		break;
+	}
+
+	*image_spec = policy->image_spec;
+	*handle = *policy->dev_handle;
+
+	return 0;
+}
+
+int plat_fwu_set_metadata_image_source(unsigned int image_id,
+				       uintptr_t *handle,
+				       uintptr_t *image_spec)
+{
+	assert((image_id == FWU_METADATA_IMAGE_ID) ||
+	       (image_id == BKUP_FWU_METADATA_IMAGE_ID));
+
+	return plat_set_image_source(image_id, handle, image_spec);
+}
+#endif /* (STM32MP_SDMMC || STM32MP_EMMC || STM32MP_SPI_NOR) && PSA_FWU_SUPPORT */

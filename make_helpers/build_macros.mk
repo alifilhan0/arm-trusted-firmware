@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2021, ARM Limited and Contributors. All rights reserved.
+# Copyright (c) 2015-2024, Arm Limited and Contributors. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -9,10 +9,6 @@ $(eval eval_available := T)
 ifneq (${eval_available},T)
     $(error This makefile only works with a Make program that supports $$(eval))
 endif
-
-# Some utility macros for manipulating awkward (whitespace) characters.
-blank			:=
-space			:=${blank} ${blank}
 
 # A user defined function to recursively search for a filename below a directory
 #    $1 is the directory root of the recursive search (blank for current directory).
@@ -37,13 +33,36 @@ define uppercase
 $(eval uppercase_result:=$(call uppercase_internal,$(uppercase_table),$(1)))$(uppercase_result)
 endef
 
+# Convenience function for setting a variable to 0 if not previously set
+# $(eval $(call default_zero,FOO))
+define default_zero
+	$(eval $(1) ?= 0)
+endef
+
+# Convenience function for setting a list of variables to 0 if not previously set
+# $(eval $(call default_zeros,FOO BAR))
+define default_zeros
+	$(foreach var,$1,$(eval $(call default_zero,$(var))))
+endef
+
+# Convenience function for setting a variable to 1 if not previously set
+# $(eval $(call default_one,FOO))
+define default_one
+	$(eval $(1) ?= 1)
+endef
+
+# Convenience function for setting a list of variables to 1 if not previously set
+# $(eval $(call default_ones,FOO BAR))
+define default_ones
+	$(foreach var,$1,$(eval $(call default_one,$(var))))
+endef
+
 # Convenience function for adding build definitions
 # $(eval $(call add_define,FOO)) will have:
 # -DFOO if $(FOO) is empty; -DFOO=$(FOO) otherwise
 define add_define
     DEFINES			+=	-D$(1)$(if $(value $(1)),=$(value $(1)),)
 endef
-
 
 # Convenience function for addding multiple build definitions
 # $(eval $(call add_defines,FOO BOO))
@@ -61,6 +80,7 @@ endef
 # Convenience function for verifying option has a boolean value
 # $(eval $(call assert_boolean,FOO)) will assert FOO is 0 or 1
 define assert_boolean
+    $(if $($(1)),,$(error $(1) must not be empty))
     $(if $(filter-out 0 1,$($1)),$(error $1 must be boolean))
 endef
 
@@ -86,6 +106,16 @@ define assert_numerics
     $(foreach num,$1,$(eval $(call assert_numeric,$(num))))
 endef
 
+# Convenience function to check for a given linker option. An call to
+# $(call ld_option, --no-XYZ) will return --no-XYZ if supported by the linker
+ld_option = $(shell $($(ARCH)-ld) $(1) -Wl,--version >/dev/null 2>&1 || $($(ARCH)-ld) $(1) -v >/dev/null 2>&1 && echo $(1))
+
+# Convenience function to check for a given compiler option. A call to
+# $(call cc_option, --no-XYZ) will return --no-XYZ if supported by the compiler
+define cc_option
+	$(shell if $($(ARCH)-cc) $(1) -c -x c /dev/null -o /dev/null >/dev/null 2>&1; then echo $(1); fi )
+endef
+
 # CREATE_SEQ is a recursive function to create sequence of numbers from 1 to
 # $(2) and assign the sequence to $(1)
 define CREATE_SEQ
@@ -95,12 +125,6 @@ $(if $(word $(2), $($(1))),\
   $(eval $(1) += $(words $($(1))))\
   $(call CREATE_SEQ,$(1),$(2))\
 )
-endef
-
-# IMG_LINKERFILE defines the linker script corresponding to a BL stage
-#   $(1) = BL stage
-define IMG_LINKERFILE
-    ${BUILD_DIR}/$(1).ld
 endef
 
 # IMG_MAPFILE defines the output file describing the memory map corresponding
@@ -238,6 +262,20 @@ check_$(1):
 	$(check_$(1)_cmd)
 endef
 
+# SELECT_OPENSSL_API_VERSION selects the OpenSSL API version to be used to
+# build the host tools by checking the version of OpenSSL located under
+# the path defined by the OPENSSL_DIR variable. It receives no parameters.
+define SELECT_OPENSSL_API_VERSION
+    # Set default value for USING_OPENSSL3 macro to 0
+    $(eval USING_OPENSSL3 = 0)
+    # Obtain the OpenSSL version for the build located under OPENSSL_DIR
+    $(eval OPENSSL_INFO := $(shell LD_LIBRARY_PATH=${OPENSSL_DIR}:${OPENSSL_DIR}/lib ${OPENSSL_BIN_PATH}/openssl version))
+    $(eval OPENSSL_CURRENT_VER = $(word 2, ${OPENSSL_INFO}))
+    $(eval OPENSSL_CURRENT_VER_MAJOR = $(firstword $(subst ., ,$(OPENSSL_CURRENT_VER))))
+    # If OpenSSL version is 3.x, then set USING_OPENSSL3 flag to 1
+    $(if $(filter 3,$(OPENSSL_CURRENT_VER_MAJOR)), $(eval USING_OPENSSL3 = 1))
+endef
+
 ################################################################################
 # Generic image processing filters
 ################################################################################
@@ -265,10 +303,11 @@ MAKE_DEP = -Wp,-MD,$(DEP) -MT $$@ -MP
 define MAKE_C_LIB
 $(eval OBJ := $(1)/$(patsubst %.c,%.o,$(notdir $(2))))
 $(eval DEP := $(patsubst %.o,%.d,$(OBJ)))
+$(eval LIB := $(call uppercase, $(notdir $(1))))
 
 $(OBJ): $(2) $(filter-out %.d,$(MAKEFILE_LIST)) | lib$(3)_dirs
 	$$(ECHO) "  CC      $$<"
-	$$(Q)$$(CC) $$(TF_CFLAGS) $$(CFLAGS) $(MAKE_DEP) -c $$< -o $$@
+	$$(Q)$($(ARCH)-cc) $$($(LIB)_CFLAGS) $$(TF_CFLAGS) $$(CFLAGS) $(MAKE_DEP) -c $$< -o $$@
 
 -include $(DEP)
 
@@ -284,7 +323,7 @@ $(eval DEP := $(patsubst %.o,%.d,$(OBJ)))
 
 $(OBJ): $(2) $(filter-out %.d,$(MAKEFILE_LIST)) | lib$(3)_dirs
 	$$(ECHO) "  AS      $$<"
-	$$(Q)$$(AS) $$(ASFLAGS) $(MAKE_DEP) -c $$< -o $$@
+	$$(Q)$($(ARCH)-as) -x assembler-with-cpp $$(TF_CFLAGS_$(ARCH)) $$(ASFLAGS) $(MAKE_DEP) -c $$< -o $$@
 
 -include $(DEP)
 
@@ -299,12 +338,15 @@ define MAKE_C
 
 $(eval OBJ := $(1)/$(patsubst %.c,%.o,$(notdir $(2))))
 $(eval DEP := $(patsubst %.o,%.d,$(OBJ)))
-$(eval BL_CPPFLAGS := $($(call uppercase,$(3))_CPPFLAGS) -DIMAGE_$(call uppercase,$(3)))
-$(eval BL_CFLAGS := $($(call uppercase,$(3))_CFLAGS))
+
+$(eval BL_DEFINES := IMAGE_$(call uppercase,$(3)) $($(call uppercase,$(3))_DEFINES) $(PLAT_BL_COMMON_DEFINES))
+$(eval BL_INCLUDE_DIRS := $($(call uppercase,$(3))_INCLUDE_DIRS) $(PLAT_BL_COMMON_INCLUDE_DIRS))
+$(eval BL_CPPFLAGS := $($(call uppercase,$(3))_CPPFLAGS) $(addprefix -D,$(BL_DEFINES)) $(addprefix -I,$(BL_INCLUDE_DIRS)) $(PLAT_BL_COMMON_CPPFLAGS))
+$(eval BL_CFLAGS := $($(call uppercase,$(3))_CFLAGS) $(PLAT_BL_COMMON_CFLAGS))
 
 $(OBJ): $(2) $(filter-out %.d,$(MAKEFILE_LIST)) | $(3)_dirs
 	$$(ECHO) "  CC      $$<"
-	$$(Q)$$(CC) $$(LTO_CFLAGS) $$(TF_CFLAGS) $$(CFLAGS) $(BL_CPPFLAGS) $(BL_CFLAGS) $(MAKE_DEP) -c $$< -o $$@
+	$$(Q)$($(ARCH)-cc) $$(LTO_CFLAGS) $$(TF_CFLAGS) $$(CFLAGS) $(BL_CPPFLAGS) $(BL_CFLAGS) $(MAKE_DEP) -c $$< -o $$@
 
 -include $(DEP)
 
@@ -319,12 +361,15 @@ define MAKE_S
 
 $(eval OBJ := $(1)/$(patsubst %.S,%.o,$(notdir $(2))))
 $(eval DEP := $(patsubst %.o,%.d,$(OBJ)))
-$(eval BL_CPPFLAGS := $($(call uppercase,$(3))_CPPFLAGS) -DIMAGE_$(call uppercase,$(3)))
-$(eval BL_ASFLAGS := $($(call uppercase,$(3))_ASFLAGS))
+
+$(eval BL_DEFINES := IMAGE_$(call uppercase,$(3)) $($(call uppercase,$(3))_DEFINES) $(PLAT_BL_COMMON_DEFINES))
+$(eval BL_INCLUDE_DIRS := $($(call uppercase,$(3))_INCLUDE_DIRS) $(PLAT_BL_COMMON_INCLUDE_DIRS))
+$(eval BL_CPPFLAGS := $($(call uppercase,$(3))_CPPFLAGS) $(addprefix -D,$(BL_DEFINES)) $(addprefix -I,$(BL_INCLUDE_DIRS)) $(PLAT_BL_COMMON_CPPFLAGS))
+$(eval BL_ASFLAGS := $($(call uppercase,$(3))_ASFLAGS) $(PLAT_BL_COMMON_ASFLAGS))
 
 $(OBJ): $(2) $(filter-out %.d,$(MAKEFILE_LIST)) | $(3)_dirs
 	$$(ECHO) "  AS      $$<"
-	$$(Q)$$(AS) $$(ASFLAGS) $(BL_CPPFLAGS) $(BL_ASFLAGS) $(MAKE_DEP) -c $$< -o $$@
+	$$(Q)$($(ARCH)-as) -x assembler-with-cpp $$(TF_CFLAGS_$(ARCH)) $$(ASFLAGS) $(BL_CPPFLAGS) $(BL_ASFLAGS) $(MAKE_DEP) -c $$< -o $$@
 
 -include $(DEP)
 
@@ -338,11 +383,14 @@ endef
 define MAKE_LD
 
 $(eval DEP := $(1).d)
-$(eval BL_CPPFLAGS := $($(call uppercase,$(3))_CPPFLAGS) -DIMAGE_$(call uppercase,$(3)))
+
+$(eval BL_DEFINES := IMAGE_$(call uppercase,$(3)) $($(call uppercase,$(3))_DEFINES) $(PLAT_BL_COMMON_DEFINES))
+$(eval BL_INCLUDE_DIRS := $($(call uppercase,$(3))_INCLUDE_DIRS) $(PLAT_BL_COMMON_INCLUDE_DIRS))
+$(eval BL_CPPFLAGS := $($(call uppercase,$(3))_CPPFLAGS) $(addprefix -D,$(BL_DEFINES)) $(addprefix -I,$(BL_INCLUDE_DIRS)) $(PLAT_BL_COMMON_CPPFLAGS))
 
 $(1): $(2) $(filter-out %.d,$(MAKEFILE_LIST)) | $(3)_dirs
 	$$(ECHO) "  PP      $$<"
-	$$(Q)$$(CPP) $$(CPPFLAGS) $(BL_CPPFLAGS) $(TF_CFLAGS_$(ARCH)) -P -x assembler-with-cpp -D__LINKER__ $(MAKE_DEP) -o $$@ $$<
+	$$(Q)$($(ARCH)-cpp) -E $$(CPPFLAGS) $(BL_CPPFLAGS) $(TF_CFLAGS_$(ARCH)) -P -x assembler-with-cpp -D__LINKER__ $(MAKE_DEP) -o $$@ $$<
 
 -include $(DEP)
 
@@ -424,7 +472,7 @@ $(eval $(call MAKE_LIB_OBJS,$(BUILD_DIR),$(SOURCES),$(1)))
 .PHONY : lib${1}_dirs
 lib${1}_dirs: | ${BUILD_DIR} ${LIB_DIR}  ${ROMLIB_DIR} ${LIBWRAPPER_DIR}
 libraries: ${LIB_DIR}/lib$(1).a
-ifneq ($(findstring armlink,$(notdir $(LD))),)
+ifeq ($($(ARCH)-ld-id),arm-link)
 LDPATHS = --userlibpath=${LIB_DIR}
 LDLIBS += --library=$(1)
 else
@@ -440,7 +488,16 @@ all: ${LIB_DIR}/lib$(1).a
 
 ${LIB_DIR}/lib$(1).a: $(OBJS)
 	$$(ECHO) "  AR      $$@"
-	$$(Q)$$(AR) cr $$@ $$?
+	$$(Q)$($(ARCH)-ar) cr $$@ $$?
+endef
+
+# Generate the path to one or more preprocessed linker scripts given the paths
+# of their sources.
+#
+# Arguments:
+#   $(1) = path to one or more linker script sources
+define linker_script_path
+        $(patsubst %.S,$(BUILD_DIR)/%,$(1))
 endef
 
 # MAKE_BL macro defines the targets and options to build each BL image.
@@ -452,19 +509,24 @@ endef
 define MAKE_BL
         $(eval BUILD_DIR  := ${BUILD_PLAT}/$(1))
         $(eval BL_SOURCES := $($(call uppercase,$(1))_SOURCES))
-        $(eval SOURCES    := $(BL_SOURCES) $(BL_COMMON_SOURCES) $(PLAT_BL_COMMON_SOURCES))
+        $(eval SOURCES    := $(sort $(BL_SOURCES) $(BL_COMMON_SOURCES) $(PLAT_BL_COMMON_SOURCES)))
         $(eval OBJS       := $(addprefix $(BUILD_DIR)/,$(call SOURCES_TO_OBJS,$(SOURCES))))
-        $(eval LINKERFILE := $(call IMG_LINKERFILE,$(1)))
         $(eval MAPFILE    := $(call IMG_MAPFILE,$(1)))
         $(eval ELF        := $(call IMG_ELF,$(1)))
         $(eval DUMP       := $(call IMG_DUMP,$(1)))
         $(eval BIN        := $(call IMG_BIN,$(1)))
         $(eval ENC_BIN    := $(call IMG_ENC_BIN,$(1)))
-        $(eval BL_LINKERFILE := $($(call uppercase,$(1))_LINKERFILE))
         $(eval BL_LIBS    := $($(call uppercase,$(1))_LIBS))
+
+        $(eval DEFAULT_LINKER_SCRIPT_SOURCE := $($(call uppercase,$(1))_DEFAULT_LINKER_SCRIPT_SOURCE))
+        $(eval DEFAULT_LINKER_SCRIPT := $(call linker_script_path,$(DEFAULT_LINKER_SCRIPT_SOURCE)))
+
+        $(eval LINKER_SCRIPT_SOURCES := $($(call uppercase,$(1))_LINKER_SCRIPT_SOURCES))
+        $(eval LINKER_SCRIPTS := $(call linker_script_path,$(LINKER_SCRIPT_SOURCES)))
+
         # We use sort only to get a list of unique object directory names.
         # ordering is not relevant but sort removes duplicates.
-        $(eval TEMP_OBJ_DIRS := $(sort $(dir ${OBJS} ${LINKERFILE})))
+        $(eval TEMP_OBJ_DIRS := $(sort $(dir ${OBJS} ${DEFAULT_LINKER_SCRIPT} ${LINKER_SCRIPTS})))
         # The $(dir ) function leaves a trailing / on the directory names
         # Rip off the / to match directory names with make rule targets.
         $(eval OBJ_DIRS   := $(patsubst %/,%,$(TEMP_OBJ_DIRS)))
@@ -473,7 +535,8 @@ define MAKE_BL
 
 $(eval $(call MAKE_PREREQ_DIR,${BUILD_DIR},${BUILD_PLAT}))
 
-$(eval $(foreach objd,${OBJ_DIRS},$(call MAKE_PREREQ_DIR,${objd},${BUILD_DIR})))
+$(eval $(foreach objd,${OBJ_DIRS},
+        $(call MAKE_PREREQ_DIR,${objd},${BUILD_DIR})))
 
 .PHONY : ${1}_dirs
 
@@ -482,36 +545,47 @@ $(eval $(foreach objd,${OBJ_DIRS},$(call MAKE_PREREQ_DIR,${objd},${BUILD_DIR})))
 ${1}_dirs: | ${OBJ_DIRS}
 
 $(eval $(call MAKE_OBJS,$(BUILD_DIR),$(SOURCES),$(1)))
-$(eval $(call MAKE_LD,$(LINKERFILE),$(BL_LINKERFILE),$(1)))
+
+# Generate targets to preprocess each required linker script
+$(eval $(foreach source,$(DEFAULT_LINKER_SCRIPT_SOURCE) $(LINKER_SCRIPT_SOURCES), \
+        $(call MAKE_LD,$(call linker_script_path,$(source)),$(source),$(1))))
+
 $(eval BL_LDFLAGS := $($(call uppercase,$(1))_LDFLAGS))
 
 ifeq ($(USE_ROMLIB),1)
 $(ELF): romlib.bin
 endif
 
-$(ELF): $(OBJS) $(LINKERFILE) | $(1)_dirs libraries $(BL_LIBS)
+# MODULE_OBJS can be assigned by vendors with different compiled
+# object file path, and prebuilt object file path.
+$(eval OBJS += $(MODULE_OBJS))
+
+$(ELF): $(OBJS) $(DEFAULT_LINKER_SCRIPT) $(LINKER_SCRIPTS) | $(1)_dirs libraries $(BL_LIBS)
 	$$(ECHO) "  LD      $$@"
 ifdef MAKE_BUILD_STRINGS
-	$(call MAKE_BUILD_STRINGS, $(BUILD_DIR)/build_message.o)
+	$(call MAKE_BUILD_STRINGS,$(BUILD_DIR)/build_message.o)
 else
 	@echo 'const char build_message[] = "Built : "$(BUILD_MESSAGE_TIMESTAMP); \
-	       const char version_string[] = "${VERSION_STRING}";' | \
-		$$(CC) $$(TF_CFLAGS) $$(CFLAGS) -xc -c - -o $(BUILD_DIR)/build_message.o
+	       const char version_string[] = "${VERSION_STRING}"; \
+	       const char version[] = "${VERSION}";' | \
+		$($(ARCH)-cc) $$(TF_CFLAGS) $$(CFLAGS) -xc -c - -o $(BUILD_DIR)/build_message.o
 endif
-ifneq ($(findstring armlink,$(notdir $(LD))),)
-	$$(Q)$$(LD) -o $$@ $$(TF_LDFLAGS) $$(LDFLAGS) $(BL_LDFLAGS) --entry=${1}_entrypoint \
+ifeq ($($(ARCH)-ld-id),arm-link)
+	$$(Q)$($(ARCH)-ld) -o $$@ $$(TF_LDFLAGS) $$(LDFLAGS) $(BL_LDFLAGS) --entry=${1}_entrypoint \
 		--predefine="-D__LINKER__=$(__LINKER__)" \
 		--predefine="-DTF_CFLAGS=$(TF_CFLAGS)" \
 		--map --list="$(MAPFILE)" --scatter=${PLAT_DIR}/scat/${1}.scat \
 		$(LDPATHS) $(LIBWRAPPER) $(LDLIBS) $(BL_LIBS) \
 		$(BUILD_DIR)/build_message.o $(OBJS)
-else ifneq ($(findstring gcc,$(notdir $(LD))),)
-	$$(Q)$$(LD) -o $$@ $$(TF_LDFLAGS) $$(LDFLAGS) -Wl,-Map=$(MAPFILE) \
-		-Wl,-T$(LINKERFILE) $(BUILD_DIR)/build_message.o \
+else ifeq ($($(ARCH)-ld-id),gnu-gcc)
+	$$(Q)$($(ARCH)-ld) -o $$@ $$(TF_LDFLAGS) $$(LDFLAGS) $(BL_LDFLAGS) -Wl,-Map=$(MAPFILE) \
+		$(addprefix -Wl$(comma)--script$(comma),$(LINKER_SCRIPTS)) -Wl,--script,$(DEFAULT_LINKER_SCRIPT) \
+		$(BUILD_DIR)/build_message.o \
 		$(OBJS) $(LDPATHS) $(LIBWRAPPER) $(LDLIBS) $(BL_LIBS)
 else
-	$$(Q)$$(LD) -o $$@ $$(TF_LDFLAGS) $$(LDFLAGS) $(BL_LDFLAGS) -Map=$(MAPFILE) \
-		--script $(LINKERFILE) $(BUILD_DIR)/build_message.o \
+	$$(Q)$($(ARCH)-ld) -o $$@ $$(TF_LDFLAGS) $$(LDFLAGS) $(BL_LDFLAGS) -Map=$(MAPFILE) \
+		$(addprefix -T ,$(LINKER_SCRIPTS)) --script $(DEFAULT_LINKER_SCRIPT) \
+		$(BUILD_DIR)/build_message.o \
 		$(OBJS) $(LDPATHS) $(LIBWRAPPER) $(LDLIBS) $(BL_LIBS)
 endif
 ifeq ($(DISABLE_BIN_GENERATION),1)
@@ -522,11 +596,11 @@ endif
 
 $(DUMP): $(ELF)
 	$${ECHO} "  OD      $$@"
-	$${Q}$${OD} -dx $$< > $$@
+	$${Q}$($(ARCH)-od) -dx $$< > $$@
 
 $(BIN): $(ELF)
 	$${ECHO} "  BIN     $$@"
-	$$(Q)$$(OC) -O binary $$< $$@
+	$$(Q)$($(ARCH)-oc) -O binary $$< $$@
 	@${ECHO_BLANK_LINE}
 	@echo "Built $$@ successfully"
 	@${ECHO_BLANK_LINE}
@@ -589,9 +663,9 @@ $(eval DTBDEP := $(patsubst %.dtb,%.d,$(DOBJ)))
 $(DOBJ): $(2) $(filter-out %.d,$(MAKEFILE_LIST)) | fdt_dirs
 	$${ECHO} "  CPP     $$<"
 	$(eval DTBS       := $(addprefix $(1)/,$(call SOURCES_TO_DTBS,$(2))))
-	$$(Q)$$(PP) $$(DTC_CPPFLAGS) -MT $(DTBS) -MMD -MF $(DTSDEP) -o $(DPRE) $$<
+	$$(Q)$($(ARCH)-cpp) -E $$(TF_CFLAGS_$(ARCH)) $$(DTC_CPPFLAGS) -MT $(DTBS) -MMD -MF $(DTSDEP) -o $(DPRE) $$<
 	$${ECHO} "  DTC     $$<"
-	$$(Q)$$(DTC) $$(DTC_FLAGS) -d $(DTBDEP) -o $$@ $(DPRE)
+	$$(Q)$($(ARCH)-dtc) $$(DTC_FLAGS) -d $(DTBDEP) -o $$@ $(DPRE)
 
 -include $(DTBDEP)
 -include $(DTSDEP)

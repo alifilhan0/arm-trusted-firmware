@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016-2021, ARM Limited and Contributors. All rights reserved.
+# Copyright (c) 2016-2024, Arm Limited and Contributors. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -17,24 +17,25 @@ BL32_SOURCES		+=	bl32/sp_min/sp_min_main.c		\
 				bl32/sp_min/aarch32/entrypoint.S	\
 				common/runtime_svc.c			\
 				plat/common/aarch32/plat_sp_min_common.c\
+				services/arm_arch_svc/arm_arch_svc_setup.c	\
 				services/std_svc/std_svc_setup.c	\
 				${PSCI_LIB_SOURCES}
-
-ifeq (${DISABLE_MTPMU},1)
-BL32_SOURCES		+=	lib/extensions/mtpmu/aarch32/mtpmu.S
-endif
 
 ifeq (${ENABLE_PMF}, 1)
 BL32_SOURCES		+=	lib/pmf/pmf_main.c
 endif
 
-ifeq (${ENABLE_AMU},1)
+ifneq (${ENABLE_FEAT_AMU},0)
 BL32_SOURCES		+=	${AMU_SOURCES}
 endif
 
 ifeq (${WORKAROUND_CVE_2017_5715},1)
 BL32_SOURCES		+=	bl32/sp_min/wa_cve_2017_5715_bpiall.S	\
 				bl32/sp_min/wa_cve_2017_5715_icache_inv.S
+else
+ifeq (${WORKAROUND_CVE_2022_23960},1)
+BL32_SOURCES		+=	bl32/sp_min/wa_cve_2017_5715_icache_inv.S
+endif
 endif
 
 ifeq (${TRNG_SUPPORT},1)
@@ -42,15 +43,25 @@ BL32_SOURCES		+=	services/std_svc/trng/trng_main.c	\
 				services/std_svc/trng/trng_entropy_pool.c
 endif
 
-ifeq (${ENABLE_SYS_REG_TRACE_FOR_NS},1)
+ifeq (${ERRATA_ABI_SUPPORT}, 1)
+BL32_SOURCES		+=	services/std_svc/errata_abi/errata_abi_main.c
+endif
+
+ifneq (${ENABLE_SYS_REG_TRACE_FOR_NS},0)
 BL32_SOURCES		+=	lib/extensions/sys_reg_trace/aarch32/sys_reg_trace.c
 endif
 
-ifeq (${ENABLE_TRF_FOR_NS},1)
+ifneq (${ENABLE_TRF_FOR_NS},0)
 BL32_SOURCES		+=	lib/extensions/trf/aarch32/trf.c
 endif
 
-BL32_LINKERFILE	:=	bl32/sp_min/sp_min.ld.S
+BL32_DEFAULT_LINKER_SCRIPT_SOURCE := bl32/sp_min/sp_min.ld.S
+
+ifeq ($($(ARCH)-ld-id),gnu-gcc)
+        BL32_LDFLAGS	+=	-Wl,--sort-section=alignment
+else ifneq ($(filter llvm-lld gnu-ld,$($(ARCH)-ld-id)),)
+        BL32_LDFLAGS	+=	--sort-section=alignment
+endif
 
 # Include the platform-specific SP_MIN Makefile
 # If no platform-specific SP_MIN Makefile exists, it means SP_MIN is not supported

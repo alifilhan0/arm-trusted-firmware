@@ -1,10 +1,11 @@
 /*
- * Copyright (c) 2021, Arm Limited. All rights reserved.
+ * Copyright (c) 2021-2024, Arm Limited. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include <common/tbbr/tbbr_img_def.h>
+#include <platform_def.h>
 
 /dts-v1/;
 / {
@@ -19,8 +20,14 @@
 
 		nt_fw-config {
 			load-address = <0x0 0xFEF00000>;
-			max-size = <0x0100000>;
+			max-size = <0xF8000>;
 			id = <NT_FW_CONFIG_ID>;
+		};
+
+		hw-config {
+			load-address = <0x0 0xFEFF8000>;
+			max-size = <PLAT_ARM_HW_CONFIG_SIZE>;
+			id = <HW_CONFIG_ID>;
 		};
 	};
 };

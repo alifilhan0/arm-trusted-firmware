@@ -53,6 +53,7 @@ static inline uint32_t __dcc_getstatus(void)
 	return read_mdccsr_el0();
 }
 
+#if ENABLE_CONSOLE_GETC
 static inline char __dcc_getchar(void)
 {
 	char c;
@@ -61,6 +62,7 @@ static inline char __dcc_getchar(void)
 
 	return c;
 }
+#endif
 
 static inline void __dcc_putchar(char c)
 {
@@ -102,6 +104,7 @@ static int32_t dcc_console_putc(int32_t ch, struct console *console)
 	return ch;
 }
 
+#if ENABLE_CONSOLE_GETC
 static int32_t dcc_console_getc(struct console *console)
 {
 	unsigned int status;
@@ -113,12 +116,7 @@ static int32_t dcc_console_getc(struct console *console)
 
 	return __dcc_getchar();
 }
-
-int32_t dcc_console_init(unsigned long base_addr, uint32_t uart_clk,
-		      uint32_t baud_rate)
-{
-	return 0; /* No init needed */
-}
+#endif
 
 /**
  * dcc_console_flush() - Function to force a write of all buffered data
@@ -139,9 +137,12 @@ static void dcc_console_flush(struct console *console)
 static struct dcc_console dcc_console = {
 	.console = {
 		.flags = CONSOLE_FLAG_BOOT |
-			CONSOLE_FLAG_RUNTIME,
+			CONSOLE_FLAG_RUNTIME |
+			CONSOLE_FLAG_CRASH,
 		.putc = dcc_console_putc,
+#if ENABLE_CONSOLE_GETC
 		.getc = dcc_console_getc,
+#endif
 		.flush = dcc_console_flush,
 	},
 };
@@ -149,4 +150,10 @@ static struct dcc_console dcc_console = {
 int console_dcc_register(void)
 {
 	return console_register(&dcc_console.console);
+}
+
+void console_dcc_unregister(void)
+{
+	dcc_console_flush(&dcc_console.console);
+	(void)console_unregister(&dcc_console.console);
 }

@@ -62,6 +62,11 @@
 #define CACHE_WRITEBACK_GRANULE		(1 << CACHE_WRITEBACK_SHIFT)
 
 /*
+ * Define the max number of memory nodes.
+ */
+#define PLAT_MAX_MEM_NODES	128
+
+/*
  * Partition memory into secure ROM, non-secure DRAM, secure "SRAM",
  * and secure DRAM.
  */
@@ -199,7 +204,7 @@
 #define QEMU_FLASH1_BASE		0x10000000
 #define QEMU_FLASH1_SIZE		0x10000000
 
-#define PLAT_QEMU_FIP_BASE		0x00008000
+#define PLAT_QEMU_FIP_BASE		BL1_SIZE
 #define PLAT_QEMU_FIP_MAX_SIZE		0x00400000
 
 /* This is map from GIC_DIST up to last CPU (255) GIC_REDISTR */
@@ -215,6 +220,8 @@
 /*
  * GIC related constants
  * We use GICv3 where CPU Interface registers are not memory mapped
+ *
+ * Legacy values - on platform version 0.1+ they are read from DT
  */
 #define GICD_BASE			0x40060000
 #define GICR_BASE			0x40080000
@@ -258,11 +265,6 @@
  */
 #define PLAT_QEMU_DT_BASE		NS_DRAM0_BASE
 #define PLAT_QEMU_DT_MAX_SIZE		0x100000
-
-/*
- * System counter
- */
-#define SYS_COUNTER_FREQ_IN_TICKS	((1000 * 1000 * 1000) / 16)
 
 #if SPM_MM
 #define PLAT_QEMU_SP_IMAGE_BASE		BL_RAM_BASE
@@ -364,8 +366,8 @@
  * Name of the section to put the translation tables used by the S-EL1/S-EL0
  * context of a Secure Partition.
  */
-#define PLAT_SP_IMAGE_XLAT_SECTION_NAME		"qemu_sp_xlat_table"
-#define PLAT_SP_IMAGE_BASE_XLAT_SECTION_NAME	"qemu_sp_xlat_table"
+#define PLAT_SP_IMAGE_XLAT_SECTION_NAME		".qemu_sp_xlat_table"
+#define PLAT_SP_IMAGE_BASE_XLAT_SECTION_NAME	".qemu_sp_xlat_table"
 
 /* Cookies passed to the Secure Partition at boot. Not used by QEMU platforms.*/
 #define PLAT_SPM_COOKIE_0		ULL(0)

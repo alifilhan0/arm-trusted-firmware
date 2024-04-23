@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022, STMicroelectronics - All Rights Reserved
+ * Copyright (c) 2018-2024, STMicroelectronics - All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -125,7 +125,21 @@
 #define POWER_OFF_DELAY			2
 #define POWER_ON_DELAY			1
 
+#ifndef DT_SDMMC2_COMPAT
 #define DT_SDMMC2_COMPAT		"st,stm32-sdmmc2"
+#endif
+
+#if STM32MP13 || STM32MP15
+#define SDMMC_FIFO_SIZE			64U
+#else
+#define SDMMC_FIFO_SIZE			1024U
+#endif
+
+#define STM32MP_MMC_INIT_FREQ			U(400000)	/*400 KHz*/
+#define STM32MP_SD_NORMAL_SPEED_MAX_FREQ	U(25000000)	/*25 MHz*/
+#define STM32MP_SD_HIGH_SPEED_MAX_FREQ		U(50000000)	/*50 MHz*/
+#define STM32MP_EMMC_NORMAL_SPEED_MAX_FREQ	U(26000000)	/*26 MHz*/
+#define STM32MP_EMMC_HIGH_SPEED_MAX_FREQ	U(52000000)	/*52 MHz*/
 
 static void stm32_sdmmc2_init(void);
 static int stm32_sdmmc2_send_cmd_req(struct mmc_cmd *cmd);
@@ -145,6 +159,8 @@ static const struct mmc_ops stm32_sdmmc2_ops = {
 };
 
 static struct stm32_sdmmc2_params sdmmc2_params;
+
+static bool next_cmd_is_acmd;
 
 #pragma weak plat_sdmmc2_use_dma
 bool plat_sdmmc2_use_dma(unsigned int instance, unsigned int memory)
@@ -255,6 +271,20 @@ static int stm32_sdmmc2_send_cmd_req(struct mmc_cmd *cmd)
 	case MMC_CMD(1):
 		arg_reg |= OCR_POWERUP;
 		break;
+	case MMC_CMD(6):
+		if ((sdmmc2_params.device_info->mmc_dev_type == MMC_IS_SD_HC) &&
+		    (!next_cmd_is_acmd)) {
+			cmd_reg |= SDMMC_CMDR_CMDTRANS;
+			if (sdmmc2_params.use_dma) {
+				flags_data |= SDMMC_STAR_DCRCFAIL |
+					SDMMC_STAR_DTIMEOUT |
+					SDMMC_STAR_DATAEND |
+					SDMMC_STAR_RXOVERR |
+					SDMMC_STAR_IDMATE |
+					SDMMC_STAR_DBCKEND;
+			}
+		}
+		break;
 	case MMC_CMD(8):
 		if (sdmmc2_params.device_info->mmc_dev_type == MMC_IS_EMMC) {
 			cmd_reg |= SDMMC_CMDR_CMDTRANS;
@@ -292,6 +322,8 @@ static int stm32_sdmmc2_send_cmd_req(struct mmc_cmd *cmd)
 		break;
 	}
 
+	next_cmd_is_acmd = (cmd->cmd_idx == MMC_CMD(55));
+
 	mmio_write_32(base + SDMMC_ICR, SDMMC_STATIC_FLAGS);
 
 	/*
@@ -299,8 +331,7 @@ static int stm32_sdmmc2_send_cmd_req(struct mmc_cmd *cmd)
 	 * Skip CMD55 as the next command could be data related, and
 	 * the register could have been set in prepare function.
 	 */
-	if (((cmd_reg & SDMMC_CMDR_CMDTRANS) == 0U) &&
-	    (cmd->cmd_idx != MMC_CMD(55))) {
+	if (((cmd_reg & SDMMC_CMDR_CMDTRANS) == 0U) && !next_cmd_is_acmd) {
 		mmio_write_32(base + SDMMC_DCTRLR, 0U);
 	}
 
@@ -319,7 +350,7 @@ static int stm32_sdmmc2_send_cmd_req(struct mmc_cmd *cmd)
 	while ((status & flags_cmd) == 0U) {
 		if (timeout_elapsed(timeout)) {
 			err = -ETIMEDOUT;
-			ERROR("%s: timeout 10ms (cmd = %d,status = %x)\n",
+			ERROR("%s: timeout 10ms (cmd = %u,status = %x)\n",
 			      __func__, cmd->cmd_idx, status);
 			goto err_exit;
 		}
@@ -339,12 +370,12 @@ static int stm32_sdmmc2_send_cmd_req(struct mmc_cmd *cmd)
 			      (cmd->cmd_idx == MMC_CMD(13)) ||
 			      ((cmd->cmd_idx == MMC_CMD(8)) &&
 			       (cmd->resp_type == MMC_RESPONSE_R7)))) {
-				ERROR("%s: CTIMEOUT (cmd = %d,status = %x)\n",
+				ERROR("%s: CTIMEOUT (cmd = %u,status = %x)\n",
 				      __func__, cmd->cmd_idx, status);
 			}
 		} else {
 			err = -EIO;
-			ERROR("%s: CRCFAIL (cmd = %d,status = %x)\n",
+			ERROR("%s: CRCFAIL (cmd = %u,status = %x)\n",
 			      __func__, cmd->cmd_idx, status);
 		}
 
@@ -385,7 +416,7 @@ static int stm32_sdmmc2_send_cmd_req(struct mmc_cmd *cmd)
 
 	while ((status & flags_data) == 0U) {
 		if (timeout_elapsed(timeout)) {
-			ERROR("%s: timeout 10ms (cmd = %d,status = %x)\n",
+			ERROR("%s: timeout 10ms (cmd = %u,status = %x)\n",
 			      __func__, cmd->cmd_idx, status);
 			err = -ETIMEDOUT;
 			goto err_exit;
@@ -397,7 +428,7 @@ static int stm32_sdmmc2_send_cmd_req(struct mmc_cmd *cmd)
 	if ((status & (SDMMC_STAR_DTIMEOUT | SDMMC_STAR_DCRCFAIL |
 		       SDMMC_STAR_TXUNDERR | SDMMC_STAR_RXOVERR |
 		       SDMMC_STAR_IDMATE)) != 0U) {
-		ERROR("%s: Error flag (cmd = %d,status = %x)\n", __func__,
+		ERROR("%s: Error flag (cmd = %u,status = %x)\n", __func__,
 		      cmd->cmd_idx, status);
 		err = -EIO;
 	}
@@ -507,12 +538,12 @@ static int stm32_sdmmc2_prepare(int lba, uintptr_t buf, size_t size)
 	uint32_t data_ctrl = SDMMC_DCTRLR_DTDIR;
 	uint32_t arg_size;
 
-	assert(size != 0U);
+	assert((size != 0U) && (size <= UINT32_MAX));
 
 	if (size > MMC_BLOCK_SIZE) {
 		arg_size = MMC_BLOCK_SIZE;
 	} else {
-		arg_size = size;
+		arg_size = (uint32_t)size;
 	}
 
 	sdmmc2_params.use_dma = plat_sdmmc2_use_dma(base, buf);
@@ -625,7 +656,7 @@ static int stm32_sdmmc2_read(int lba, uintptr_t buf, size_t size)
 			return -ETIMEDOUT;
 		}
 
-		if (size < (8U * sizeof(uint32_t))) {
+		if (size < (SDMMC_FIFO_SIZE / 2U)) {
 			if ((mmio_read_32(base + SDMMC_DCNTR) > 0U) &&
 			    ((status & SDMMC_STAR_RXFIFOE) == 0U)) {
 				*buffer = mmio_read_32(fifo_reg);
@@ -635,7 +666,8 @@ static int stm32_sdmmc2_read(int lba, uintptr_t buf, size_t size)
 			uint32_t count;
 
 			/* Read data from SDMMC Rx FIFO */
-			for (count = 0; count < 8U; count++) {
+			for (count = 0; count < (SDMMC_FIFO_SIZE / 2U);
+			     count += sizeof(uint32_t)) {
 				*buffer = mmio_read_32(fifo_reg);
 				buffer++;
 			}
@@ -735,8 +767,6 @@ unsigned long long stm32_sdmmc2_mmc_get_device_size(void)
 
 int stm32_sdmmc2_mmc_init(struct stm32_sdmmc2_params *params)
 {
-	int rc;
-
 	assert((params != NULL) &&
 	       ((params->reg_base & MMC_BLOCK_MASK) == 0U) &&
 	       ((params->bus_width == MMC_BUS_WIDTH_1) ||
@@ -754,16 +784,20 @@ int stm32_sdmmc2_mmc_init(struct stm32_sdmmc2_params *params)
 
 	clk_enable(sdmmc2_params.clock_id);
 
-	rc = stm32mp_reset_assert(sdmmc2_params.reset_id, TIMEOUT_US_1_MS);
-	if (rc != 0) {
-		panic();
+	if ((int)sdmmc2_params.reset_id >= 0) {
+		int rc;
+
+		rc = stm32mp_reset_assert(sdmmc2_params.reset_id, TIMEOUT_US_1_MS);
+		if (rc != 0) {
+			panic();
+		}
+		udelay(2);
+		rc = stm32mp_reset_deassert(sdmmc2_params.reset_id, TIMEOUT_US_1_MS);
+		if (rc != 0) {
+			panic();
+		}
+		mdelay(1);
 	}
-	udelay(2);
-	rc = stm32mp_reset_deassert(sdmmc2_params.reset_id, TIMEOUT_US_1_MS);
-	if (rc != 0) {
-		panic();
-	}
-	mdelay(1);
 
 	sdmmc2_params.clk_rate = clk_get_rate(sdmmc2_params.clock_id);
 	sdmmc2_params.device_info->ocr_voltage = OCR_3_2_3_3 | OCR_3_3_3_4;

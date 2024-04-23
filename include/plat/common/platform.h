@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2024, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -11,12 +11,18 @@
 
 #include <lib/psci/psci.h>
 #if defined(SPD_spmd)
- #include <services/spm_core_manifest.h>
+#include <services/spm_core_manifest.h>
 #endif
-#if TRNG_SUPPORT
-#include "plat_trng.h"
+#if ENABLE_RME
+#include <services/rmm_core_manifest.h>
 #endif
 #include <drivers/fwu/fwu_metadata.h>
+#if TRNG_SUPPORT
+#include "plat_trng.h"
+#endif /* TRNG_SUPPORT */
+#if DRTM_SUPPORT
+#include "plat_drtm.h"
+#endif /* DRTM_SUPPORT */
 
 /*******************************************************************************
  * Forward declarations
@@ -31,15 +37,23 @@ struct bl_params;
 struct mmap_region;
 struct spm_mm_boot_info;
 struct sp_res_desc;
+struct rmm_manifest;
 enum fw_enc_status_t;
 
 /*******************************************************************************
  * plat_get_rotpk_info() flags
  ******************************************************************************/
 #define ROTPK_IS_HASH			(1 << 0)
+
 /* Flag used to skip verification of the certificate ROTPK while the platform
    ROTPK is not deployed */
 #define ROTPK_NOT_DEPLOYED		(1 << 1)
+
+static inline bool is_rotpk_flags_valid(unsigned int flags)
+{
+	unsigned int valid_flags = ROTPK_IS_HASH;
+	return (flags == ROTPK_NOT_DEPLOYED) || ((flags & ~valid_flags) == 0);
+}
 
 /*******************************************************************************
  * plat_get_enc_key_info() flags
@@ -65,6 +79,20 @@ uintptr_t plat_get_ns_image_entrypoint(void);
 unsigned int plat_my_core_pos(void);
 int plat_core_pos_by_mpidr(u_register_t mpidr);
 int plat_get_mbedtls_heap(void **heap_addr, size_t *heap_size);
+
+/*******************************************************************************
+ * Simple routine to determine whether a mpidr is valid or not.
+ ******************************************************************************/
+static inline bool is_valid_mpidr(u_register_t mpidr)
+{
+	int pos = plat_core_pos_by_mpidr(mpidr);
+
+	if ((pos < 0) || ((unsigned int)pos >= PLATFORM_CORE_COUNT)) {
+		return false;
+	}
+
+	return true;
+}
 
 #if STACK_PROTECTOR_ENABLED
 /*
@@ -97,15 +125,18 @@ int plat_ic_is_sgi(unsigned int id);
 unsigned int plat_ic_get_interrupt_active(unsigned int id);
 void plat_ic_disable_interrupt(unsigned int id);
 void plat_ic_enable_interrupt(unsigned int id);
-int plat_ic_has_interrupt_type(unsigned int type);
+bool plat_ic_has_interrupt_type(unsigned int type);
 void plat_ic_set_interrupt_type(unsigned int id, unsigned int type);
 void plat_ic_set_interrupt_priority(unsigned int id, unsigned int priority);
 void plat_ic_raise_el3_sgi(int sgi_num, u_register_t target);
+void plat_ic_raise_ns_sgi(int sgi_num, u_register_t target);
+void plat_ic_raise_s_el1_sgi(int sgi_num, u_register_t target);
 void plat_ic_set_spi_routing(unsigned int id, unsigned int routing_mode,
 		u_register_t mpidr);
 void plat_ic_set_interrupt_pending(unsigned int id);
 void plat_ic_clear_interrupt_pending(unsigned int id);
 unsigned int plat_ic_set_priority_mask(unsigned int mask);
+unsigned int plat_ic_deactivate_priority(unsigned int mask);
 unsigned int plat_ic_get_interrupt_id(unsigned int raw);
 
 /*******************************************************************************
@@ -113,11 +144,14 @@ unsigned int plat_ic_get_interrupt_id(unsigned int raw);
  ******************************************************************************/
 uintptr_t plat_get_my_stack(void);
 void plat_report_exception(unsigned int exception_type);
+void plat_report_prefetch_abort(unsigned int fault_address);
+void plat_report_data_abort(unsigned int fault_address);
 int plat_crash_console_init(void);
 int plat_crash_console_putc(int c);
 void plat_crash_console_flush(void);
 void plat_error_handler(int err) __dead2;
 void plat_panic_handler(void) __dead2;
+void plat_system_reset(void) __dead2;
 const char *plat_log_get_prefix(unsigned int log_level);
 void bl2_plat_preload_setup(void);
 int plat_try_next_boot_source(void);
@@ -127,6 +161,8 @@ int plat_mboot_measure_image(unsigned int image_id, image_info_t *image_data);
 int plat_mboot_measure_critical_data(unsigned int critical_data_id,
 				     const void *base,
 				     size_t size);
+int plat_mboot_measure_key(const void *pk_oid, const void *pk_ptr,
+			   size_t pk_len);
 #else
 static inline int plat_mboot_measure_image(unsigned int image_id __unused,
 					   image_info_t *image_data __unused)
@@ -137,6 +173,12 @@ static inline int plat_mboot_measure_critical_data(
 					unsigned int critical_data_id __unused,
 					const void *base __unused,
 					size_t size __unused)
+{
+	return 0;
+}
+static inline int plat_mboot_measure_key(const void *pk_oid __unused,
+					 const void *pk_ptr __unused,
+					 size_t pk_len __unused)
 {
 	return 0;
 }
@@ -201,7 +243,7 @@ __dead2 void bl1_plat_fwu_done(void *client_cookie, void *reserved);
 int bl1_plat_handle_pre_image_load(unsigned int image_id);
 int bl1_plat_handle_post_image_load(unsigned int image_id);
 
-#if MEASURED_BOOT
+#if (MEASURED_BOOT || DICE_PROTECTION_ENVIRONMENT)
 void bl1_plat_mboot_init(void);
 void bl1_plat_mboot_finish(void);
 #else
@@ -211,7 +253,7 @@ static inline void bl1_plat_mboot_init(void)
 static inline void bl1_plat_mboot_finish(void)
 {
 }
-#endif /* MEASURED_BOOT */
+#endif /* MEASURED_BOOT || DICE_PROTECTION_ENVIRONMENT */
 
 /*******************************************************************************
  * Mandatory BL2 functions
@@ -231,7 +273,7 @@ int bl2_plat_handle_post_image_load(unsigned int image_id);
 /*******************************************************************************
  * Optional BL2 functions (may be overridden)
  ******************************************************************************/
-#if MEASURED_BOOT
+#if (MEASURED_BOOT || DICE_PROTECTION_ENVIRONMENT)
 void bl2_plat_mboot_init(void);
 void bl2_plat_mboot_finish(void);
 #else
@@ -241,11 +283,11 @@ static inline void bl2_plat_mboot_init(void)
 static inline void bl2_plat_mboot_finish(void)
 {
 }
-#endif /* MEASURED_BOOT */
+#endif /* MEASURED_BOOT || DICE_PROTECTION_ENVIRONMENTs */
 
 /*******************************************************************************
- * Mandatory BL2 at EL3 functions: Must be implemented if BL2_AT_EL3 image is
- * supported
+ * Mandatory BL2 at EL3 functions: Must be implemented
+ * if RESET_TO_BL2 image is supported
  ******************************************************************************/
 void bl2_el3_early_platform_setup(u_register_t arg0, u_register_t arg1,
 				  u_register_t arg2, u_register_t arg3);
@@ -303,6 +345,18 @@ plat_local_state_t plat_get_target_pwr_state(unsigned int lvl,
 			unsigned int ncpu);
 
 /*******************************************************************************
+ * Mandatory BL31 functions when ENABLE_RME=1
+ ******************************************************************************/
+#if ENABLE_RME
+int plat_rmmd_get_cca_attest_token(uintptr_t buf, size_t *len,
+				   uintptr_t hash, size_t hash_size);
+int plat_rmmd_get_cca_realm_attest_key(uintptr_t buf, size_t *len,
+				       unsigned int type);
+size_t plat_rmmd_get_el3_rmm_shared_mem(uintptr_t *shared);
+int plat_rmmd_load_manifest(struct rmm_manifest *manifest);
+#endif
+
+/*******************************************************************************
  * Optional BL31 functions (may be overridden)
  ******************************************************************************/
 void bl31_plat_enable_mmu(uint32_t flags);
@@ -339,6 +393,10 @@ int plat_spm_sp_get_next_address(void **sp_base, size_t *sp_size,
 int plat_spm_core_manifest_load(spmc_manifest_attribute_t *manifest,
 				const void *pm_addr);
 #endif
+#if defined(SPMC_AT_EL3)
+int plat_spmc_shmem_datastore_get(uint8_t **datastore, size_t *size);
+#endif
+
 /*******************************************************************************
  * Mandatory BL image load functions(may be overridden).
  ******************************************************************************/
@@ -389,6 +447,20 @@ int32_t plat_is_smccc_feature_available(u_register_t fid);
 int plat_fwu_set_metadata_image_source(unsigned int image_id,
 				       uintptr_t *dev_handle,
 				       uintptr_t *image_spec);
-void plat_fwu_set_images_source(struct fwu_metadata *metadata);
+void plat_fwu_set_images_source(const struct fwu_metadata *metadata);
+uint32_t plat_fwu_get_boot_idx(void);
+
+/*
+ * Optional function to indicate if cache management operations can be
+ * performed.
+ */
+#if CONDITIONAL_CMO
+uint64_t plat_can_cmo(void);
+#else
+static inline uint64_t plat_can_cmo(void)
+{
+	return 1;
+}
+#endif /* CONDITIONAL_CMO */
 
 #endif /* PLATFORM_H */

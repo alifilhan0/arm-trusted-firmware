@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2013-2021, ARM Limited and Contributors. All rights reserved.
+# Copyright (c) 2013-2024, Arm Limited and Contributors. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -15,16 +15,18 @@ PLAT_INCLUDES		:=	-Iplat/rpi/common/include		\
 PLAT_BL_COMMON_SOURCES	:=	drivers/ti/uart/aarch64/16550_console.S	\
 				drivers/arm/pl011/aarch64/pl011_console.S \
 				plat/rpi/common/rpi3_common.c		\
+				plat/rpi/common/rpi3_console_dual.c	\
 				${XLAT_TABLES_LIB_SRCS}
 
 BL31_SOURCES		+=	lib/cpus/aarch64/cortex_a72.S		\
 				plat/rpi/common/aarch64/plat_helpers.S	\
-				plat/rpi/rpi4/aarch64/armstub8_header.S	\
+				plat/rpi/common/aarch64/armstub8_header.S \
 				drivers/delay_timer/delay_timer.c	\
 				drivers/gpio/gpio.c			\
 				drivers/rpi3/gpio/rpi3_gpio.c		\
 				plat/common/plat_gicv2.c                \
-				plat/rpi/rpi4/rpi4_bl31_setup.c		\
+				plat/rpi/common/rpi4_bl31_setup.c	\
+				plat/rpi/rpi4/rpi4_setup.c		\
 				plat/rpi/common/rpi3_pm.c		\
 				plat/common/plat_psci_common.c		\
 				plat/rpi/common/rpi3_topology.c		\
@@ -39,9 +41,9 @@ RESET_TO_BL31		:=	1
 COLD_BOOT_SINGLE_CPU	:=	0
 
 # Tune compiler for Cortex-A72
-ifeq ($(notdir $(CC)),armclang)
+ifeq ($($(ARCH)-cc-id),arm-clang)
     TF_CFLAGS_aarch64	+=	-mcpu=cortex-a72
-else ifneq ($(findstring clang,$(notdir $(CC))),)
+else ifneq ($(filter %-clang,$($(ARCH)-cc-id)),)
     TF_CFLAGS_aarch64	+=	-mcpu=cortex-a72
 else
     TF_CFLAGS_aarch64	+=	-mtune=cortex-a72
@@ -113,4 +115,3 @@ endif
 ifeq ($(SMC_PCI_SUPPORT), 1)
 BL31_SOURCES            +=      plat/rpi/rpi4/rpi4_pci_svc.c
 endif
-

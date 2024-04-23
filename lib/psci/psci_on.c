@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2022, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -61,13 +61,7 @@ int psci_cpu_on_start(u_register_t target_cpu,
 {
 	int rc;
 	aff_info_state_t target_aff_state;
-	int ret = plat_core_pos_by_mpidr(target_cpu);
-	unsigned int target_idx = (unsigned int)ret;
-
-	/* Calling function must supply valid input arguments */
-	assert(ret >= 0);
-	assert(ep != NULL);
-
+	unsigned int target_idx = (unsigned int)plat_core_pos_by_mpidr(target_cpu);
 
 	/*
 	 * This function must only be called on platforms where the
@@ -223,11 +217,4 @@ void psci_cpu_on_finish(unsigned int cpu_idx, const psci_power_state_t *state_in
 	/* Populate the mpidr field within the cpu node array */
 	/* This needs to be done only once */
 	psci_cpu_pd_nodes[cpu_idx].mpidr = read_mpidr() & MPIDR_AFFINITY_MASK;
-
-	/*
-	 * Generic management: Now we just need to retrieve the
-	 * information that we had stashed away during the cpu_on
-	 * call to set this cpu on its way.
-	 */
-	cm_prepare_el3_exit(NON_SECURE);
 }

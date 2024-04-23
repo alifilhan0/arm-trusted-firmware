@@ -187,9 +187,7 @@ struct jobring_regs {
 				((value) & JRINT_JRE)
 
  /* Macros for manipulating JR registers */
-typedef union {
-	uint64_t m_whole;
-	struct {
+typedef struct {
 #ifdef NXP_SEC_BE
 		uint32_t high;
 		uint32_t low;
@@ -197,7 +195,6 @@ typedef union {
 		uint32_t low;
 		uint32_t high;
 #endif
-	} m_halves;
 } ptr_addr_t;
 
 #if defined(CONFIG_PHYS_64BIT)
@@ -224,7 +221,7 @@ typedef union {
  /*  Lists the possible states for a job ring. */
 typedef enum sec_job_ring_state_e {
 	SEC_JOB_RING_STATE_STARTED,	/* Job ring is initialized */
-	SEC_JOB_RING_STATE_RESET,	/* Job ring reset is in progres */
+	SEC_JOB_RING_STATE_RESET,	/* Job ring reset is in progress */
 } sec_job_ring_state_t;
 
 struct sec_job_ring_t {

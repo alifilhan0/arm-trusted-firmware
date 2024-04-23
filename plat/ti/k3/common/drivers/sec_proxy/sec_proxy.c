@@ -130,7 +130,7 @@ union sec_msg_hdr {
  *
  * Return: 0 if all goes well, else appropriate error message
  */
-static inline int k3_sec_proxy_verify_thread(struct k3_sec_proxy_thread *spt,
+static int k3_sec_proxy_verify_thread(struct k3_sec_proxy_thread *spt,
 					     uint32_t dir)
 {
 	/* Check for any errors already available */
@@ -320,7 +320,7 @@ int k3_sec_proxy_recv(enum k3_sec_proxy_chan_id id, struct k3_sec_proxy_msg *msg
 
 		i = msg->len - trail_bytes;
 		while (trail_bytes--) {
-			msg->buf[i] = data_trail & 0xff;
+			msg->buf[i++] = data_trail & 0xff;
 			data_trail >>= 8;
 		}
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2016-2024, Arm Limited and Contributors. All rights reserved.
  * Copyright (c) 2020, NVIDIA Corporation. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
@@ -53,6 +53,9 @@
 #define GENMASK				GENMASK_32
 #endif
 
+#define HI(addr)			(addr >> 32)
+#define LO(addr)			(addr & 0xffffffff)
+
 /*
  * This variant of div_round_up can be used in macro definition but should not
  * be used in C code as the `div` parameter is evaluated twice.
@@ -68,14 +71,14 @@
 	__typeof__(x) _x = (x);		\
 	__typeof__(y) _y = (y);		\
 	(void)(&_x == &_y);		\
-	_x < _y ? _x : _y;		\
+	(_x < _y) ? _x : _y;		\
 })
 
 #define MAX(x, y) __extension__ ({	\
 	__typeof__(x) _x = (x);		\
 	__typeof__(y) _y = (y);		\
 	(void)(&_x == &_y);		\
-	_x > _y ? _x : _y;		\
+	(_x > _y) ? _x : _y;		\
 })
 
 #define CLAMP(x, min, max) __extension__ ({ \
@@ -84,7 +87,7 @@
 	__typeof__(max) _max = (max); \
 	(void)(&_x == &_min); \
 	(void)(&_x == &_max); \
-	(_x > _max ? _max : (_x < _min ? _min : _x)); \
+	((_x > _max) ? _max : ((_x < _min) ? _min : _x)); \
 })
 
 /*
@@ -103,6 +106,48 @@
 
 #define round_down(value, boundary)		\
 	((value) & ~round_boundary(value, boundary))
+
+/* add operation together with checking whether the operation overflowed
+ * The result is '*res',
+ * return 0 on success and 1 on overflow
+ */
+#define add_overflow(a, b, res) __builtin_add_overflow((a), (b), (res))
+
+/*
+ * Round up a value to align with a given size and
+ * check whether overflow happens.
+ * The rounduped value is '*res',
+ * return 0 on success and 1 on overflow
+ */
+#define round_up_overflow(v, size, res) (__extension__({ \
+	typeof(res) __res = res; \
+	typeof(*(__res)) __roundup_tmp = 0; \
+	typeof(v) __roundup_mask = (typeof(v))(size) - 1; \
+	\
+	add_overflow((v), __roundup_mask, &__roundup_tmp) ? 1 : \
+		(void)(*(__res) = __roundup_tmp & ~__roundup_mask), 0; \
+}))
+
+/*
+ * Add a with b, then round up the result to align with a given size and
+ * check whether overflow happens.
+ * The rounduped value is '*res',
+ * return 0 on success and 1 on overflow
+ */
+#define add_with_round_up_overflow(a, b, size, res) (__extension__({ \
+	typeof(a) __a = (a); \
+	typeof(__a) __add_res = 0; \
+	\
+	add_overflow((__a), (b), &__add_res) ? 1 : \
+		round_up_overflow(__add_res, (size), (res)) ? 1 : 0; \
+}))
+
+/**
+ * Helper macro to ensure a value lies on a given boundary.
+ */
+#define is_aligned(value, boundary)			\
+	(round_up((uintptr_t) value, boundary) ==	\
+	 round_down((uintptr_t) value, boundary))
 
 /*
  * Evaluates to 1 if (ptr + inc) overflows, 0 otherwise.

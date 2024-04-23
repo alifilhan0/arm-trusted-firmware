@@ -1,10 +1,16 @@
 #
-# Copyright (c) 2015-2021, ARM Limited and Contributors. All rights reserved.
+# Copyright (c) 2015-2023, Arm Limited and Contributors. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
 
 include common/fdt_wrappers.mk
+
+ifeq (${ARCH},aarch32)
+    ifeq (${AARCH32_SP},none)
+        $(error Variable AARCH32_SP has to be set for AArch32)
+    endif
+endif
 
 ifeq (${ARCH}, aarch64)
   # On ARM standard platorms, the TSP can execute from Trusted SRAM, Trusted
@@ -73,6 +79,14 @@ ARM_BL31_IN_DRAM		:=	0
 $(eval $(call assert_boolean,ARM_BL31_IN_DRAM))
 $(eval $(call add_define,ARM_BL31_IN_DRAM))
 
+# As per CCA security model, all root firmware must execute from on-chip secure
+# memory. This means we must not run BL31 from TZC-protected DRAM.
+ifeq (${ARM_BL31_IN_DRAM},1)
+  ifeq (${ENABLE_RME},1)
+    $(error "BL31 must not run from DRAM on RME-systems. Please set ARM_BL31_IN_DRAM to 0")
+  endif
+endif
+
 # Process ARM_PLAT_MT flag
 ARM_PLAT_MT			:=	0
 $(eval $(call assert_boolean,ARM_PLAT_MT))
@@ -105,11 +119,6 @@ ifeq (${ARM_LINUX_KERNEL_AS_BL33},1)
     $(eval $(call add_define,ARM_PRELOADED_DTB_BASE))
   endif
 endif
-
-# Arm Ethos-N NPU SiP service
-ARM_ETHOSN_NPU_DRIVER			:=	0
-$(eval $(call assert_boolean,ARM_ETHOSN_NPU_DRIVER))
-$(eval $(call add_define,ARM_ETHOSN_NPU_DRIVER))
 
 # Use an implementation of SHA-256 with a smaller memory footprint but reduced
 # speed.
@@ -155,22 +164,9 @@ ifeq ($(SEPARATE_NOBITS_REGION),1)
     endif
 endif
 
-# Disable ARM Cryptocell by default
-ARM_CRYPTOCELL_INTEG		:=	0
-$(eval $(call assert_boolean,ARM_CRYPTOCELL_INTEG))
-$(eval $(call add_define,ARM_CRYPTOCELL_INTEG))
-
 # Enable PIE support for RESET_TO_BL31/RESET_TO_SP_MIN case
 ifneq ($(filter 1,${RESET_TO_BL31} ${RESET_TO_SP_MIN}),)
 	ENABLE_PIE			:=	1
-endif
-
-# CryptoCell integration relies on coherent buffers for passing data from
-# the AP CPU to the CryptoCell
-ifeq (${ARM_CRYPTOCELL_INTEG},1)
-    ifeq (${USE_COHERENT_MEM},0)
-        $(error "ARM_CRYPTOCELL_INTEG needs USE_COHERENT_MEM to be set.")
-    endif
 endif
 
 # Disable GPT parser support, use FIP image by default
@@ -187,8 +183,10 @@ endif
 # Enable CRC instructions via extension for ARMv8-A CPUs.
 # For ARMv8.1-A, and onwards CRC instructions are default enabled.
 # Enable HW computed CRC support unconditionally in BL2 component.
-ifeq (${ARM_ARCH_MINOR},0)
-  BL2_CPPFLAGS += -march=armv8-a+crc
+ifeq (${ARM_ARCH_MAJOR},8)
+    ifeq (${ARM_ARCH_MINOR},0)
+        BL2_CPPFLAGS += -march=armv8-a+crc
+    endif
 endif
 
 ifeq ($(PSA_FWU_SUPPORT),1)
@@ -273,7 +271,7 @@ DYN_CFG_SOURCES		+=	${FDT_WRAPPERS_SOURCES}
 BL1_SOURCES		+=	${DYN_CFG_SOURCES}
 BL2_SOURCES		+=	${DYN_CFG_SOURCES}
 
-ifeq (${BL2_AT_EL3},1)
+ifeq (${RESET_TO_BL2},1)
 BL2_SOURCES		+=	plat/arm/common/arm_bl2_el3_setup.c
 endif
 
@@ -282,7 +280,7 @@ endif
 ifeq (${JUNO_AARCH32_EL3_RUNTIME},1)
 BL2_SOURCES		+=	plat/arm/common/aarch32/arm_bl2_mem_params_desc.c
 else
-ifneq (${PLAT}, diphda)
+ifneq (${PLAT}, corstone1000)
 BL2_SOURCES		+=	plat/arm/common/${ARCH}/arm_bl2_mem_params_desc.c
 endif
 endif
@@ -301,25 +299,30 @@ BL31_SOURCES		+=	plat/arm/common/arm_bl31_setup.c		\
 				plat/arm/common/arm_topology.c			\
 				plat/common/plat_psci_common.c
 
-ifneq ($(filter 1,${ENABLE_PMF} ${ARM_ETHOSN_NPU_DRIVER}),)
+ifneq ($(filter 1,${ENABLE_PMF} ${ETHOSN_NPU_DRIVER}),)
 ARM_SVC_HANDLER_SRCS :=
 
 ifeq (${ENABLE_PMF},1)
 ARM_SVC_HANDLER_SRCS	+=	lib/pmf/pmf_smc.c
 endif
 
-ifeq (${ARM_ETHOSN_NPU_DRIVER},1)
+ifeq (${ETHOSN_NPU_DRIVER},1)
 ARM_SVC_HANDLER_SRCS	+=	plat/arm/common/fconf/fconf_ethosn_getter.c	\
 				drivers/delay_timer/delay_timer.c		\
 				drivers/arm/ethosn/ethosn_smc.c
+ifeq (${ETHOSN_NPU_TZMP1},1)
+ARM_SVC_HANDLER_SRCS	+=	drivers/arm/ethosn/ethosn_big_fw.c
+endif
 endif
 
 ifeq (${ARCH}, aarch64)
 BL31_SOURCES		+=	plat/arm/common/aarch64/execution_state_switch.c\
 				plat/arm/common/arm_sip_svc.c			\
+				plat/arm/common/plat_arm_sip_svc.c		\
 				${ARM_SVC_HANDLER_SRCS}
 else
 BL32_SOURCES		+=	plat/arm/common/arm_sip_svc.c			\
+				plat/arm/common/plat_arm_sip_svc.c		\
 				${ARM_SVC_HANDLER_SRCS}
 endif
 endif
@@ -336,15 +339,14 @@ endif
 endif
 
 # RAS sources
-ifeq (${RAS_EXTENSION},1)
+ifeq (${ENABLE_FEAT_RAS}-${HANDLE_EA_EL3_FIRST_NS},1-1)
 BL31_SOURCES		+=	lib/extensions/ras/std_err_record.c		\
 				lib/extensions/ras/ras_common.c
 endif
 
 # Pointer Authentication sources
 ifeq (${ENABLE_PAUTH}, 1)
-PLAT_BL_COMMON_SOURCES	+=	plat/arm/common/aarch64/arm_pauth.c	\
-				lib/extensions/pauth/pauth_helpers.S
+PLAT_BL_COMMON_SOURCES	+=	plat/arm/common/aarch64/arm_pauth.c
 endif
 
 ifeq (${SPD},spmd)
@@ -355,13 +357,15 @@ BL31_SOURCES		+=	plat/common/plat_spmd_manifest.c	\
 BL31_SOURCES		+=	${FDT_WRAPPERS_SOURCES}
 endif
 
+ifeq (${DRTM_SUPPORT},1)
+BL31_SOURCES            +=	plat/arm/common/arm_err.c
+endif
+
 ifneq (${TRUSTED_BOARD_BOOT},0)
 
     # Include common TBB sources
-    AUTH_SOURCES	:=	drivers/auth/auth_mod.c				\
-				drivers/auth/crypto_mod.c			\
-				drivers/auth/img_parser_mod.c			\
-				lib/fconf/fconf_tbbr_getter.c
+    AUTH_SOURCES 	:= 	drivers/auth/auth_mod.c	\
+				drivers/auth/img_parser_mod.c
 
     # Include the selected chain of trust sources.
     ifeq (${COT},tbbr)
@@ -370,11 +374,21 @@ ifneq (${TRUSTED_BOARD_BOOT},0)
         ifneq (${COT_DESC_IN_DTB},0)
             BL2_SOURCES	+=	lib/fconf/fconf_cot_getter.c
         else
-            BL2_SOURCES	+=	drivers/auth/tbbr/tbbr_cot_common.c	\
-				drivers/auth/tbbr/tbbr_cot_bl2.c
+            BL2_SOURCES	+=	drivers/auth/tbbr/tbbr_cot_common.c
+	    # Juno has its own TBBR CoT file for BL2
+            ifneq (${PLAT},juno)
+                BL2_SOURCES	+=	drivers/auth/tbbr/tbbr_cot_bl2.c
+            endif
         endif
     else ifeq (${COT},dualroot)
         AUTH_SOURCES	+=	drivers/auth/dualroot/cot.c
+    else ifeq (${COT},cca)
+        BL1_SOURCES	+=	drivers/auth/cca/cot.c
+        ifneq (${COT_DESC_IN_DTB},0)
+            BL2_SOURCES	+=	lib/fconf/fconf_cot_getter.c
+        else
+            BL2_SOURCES	+=	drivers/auth/cca/cot.c
+        endif
     else
         $(error Unknown chain of trust ${COT})
     endif
@@ -389,29 +403,46 @@ ifneq (${TRUSTED_BOARD_BOOT},0)
 
     $(eval $(call TOOL_ADD_IMG,ns_bl2u,--fwu,FWU_))
 
-# Include Measured Boot makefile before any Crypto library makefile.
-# Crypto library makefile may need default definitions of Measured Boot build
-# flags present in Measured Boot makefile.
-ifeq (${MEASURED_BOOT},1)
-    MEASURED_BOOT_MK := drivers/measured_boot/event_log/event_log.mk
-    $(info Including ${MEASURED_BOOT_MK})
-    include ${MEASURED_BOOT_MK}
-endif
-
-    # We expect to locate the *.mk files under the directories specified below
-ifeq (${ARM_CRYPTOCELL_INTEG},0)
-    CRYPTO_LIB_MK := drivers/auth/mbedtls/mbedtls_crypto.mk
-else
-    CRYPTO_LIB_MK := drivers/auth/cryptocell/cryptocell_crypto.mk
-endif
     IMG_PARSER_LIB_MK := drivers/auth/mbedtls/mbedtls_x509.mk
-
-    $(info Including ${CRYPTO_LIB_MK})
-    include ${CRYPTO_LIB_MK}
 
     $(info Including ${IMG_PARSER_LIB_MK})
     include ${IMG_PARSER_LIB_MK}
+endif
 
+# Include Measured Boot makefile before any Crypto library makefile.
+# Crypto library makefile may need default definitions of Measured Boot build
+# flags present in Measured Boot makefile.
+ifneq ($(filter 1,${MEASURED_BOOT} ${DRTM_SUPPORT}),)
+    MEASURED_BOOT_MK := drivers/measured_boot/event_log/event_log.mk
+    $(info Including ${MEASURED_BOOT_MK})
+    include ${MEASURED_BOOT_MK}
+
+    ifneq (${MBOOT_EL_HASH_ALG}, sha256)
+        $(eval $(call add_define,TF_MBEDTLS_MBOOT_USE_SHA512))
+    endif
+
+    ifeq (${MEASURED_BOOT},1)
+         BL1_SOURCES		+= 	${EVENT_LOG_SOURCES}
+         BL2_SOURCES		+= 	${EVENT_LOG_SOURCES}
+    endif
+
+    ifeq (${DRTM_SUPPORT},1)
+         BL31_SOURCES	        += 	${EVENT_LOG_SOURCES}
+    endif
+endif
+
+ifneq ($(filter 1,${MEASURED_BOOT} ${TRUSTED_BOARD_BOOT} ${DRTM_SUPPORT}),)
+    CRYPTO_SOURCES	:=	drivers/auth/crypto_mod.c 	\
+				lib/fconf/fconf_tbbr_getter.c
+    BL1_SOURCES		+=	${CRYPTO_SOURCES}
+    BL2_SOURCES		+=	${CRYPTO_SOURCES}
+    BL31_SOURCES	+=	drivers/auth/crypto_mod.c
+
+    # We expect to locate the *.mk files under the directories specified below
+    CRYPTO_LIB_MK := drivers/auth/mbedtls/mbedtls_crypto.mk
+
+    $(info Including ${CRYPTO_LIB_MK})
+    include ${CRYPTO_LIB_MK}
 endif
 
 ifeq (${RECLAIM_INIT_CODE}, 1)
@@ -419,4 +450,3 @@ ifeq (${RECLAIM_INIT_CODE}, 1)
         $(error "To reclaim init code xlat tables v2 must be used")
     endif
 endif
-

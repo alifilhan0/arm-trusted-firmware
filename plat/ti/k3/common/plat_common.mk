@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2017-2020, ARM Limited and Contributors. All rights reserved.
+# Copyright (c) 2017-2022, ARM Limited and Contributors. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -27,7 +27,8 @@ ERRATA_A72_859971	:=	1
 ERRATA_A72_1319367	:=	1
 
 CRASH_REPORTING		:= 1
-HANDLE_EA_EL3_FIRST	:= 1
+
+NS_TIMER_SWITCH		:=	0
 
 # Split out RO data into a non-executable section
 SEPARATE_CODE_AND_RODATA :=    1

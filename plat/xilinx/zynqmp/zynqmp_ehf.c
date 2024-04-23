@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2017-2019, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2017-2019, Arm Limited and Contributors. All rights reserved.
  * Copyright (c) Siemens AG, 2020-2021
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <platform_def.h>
-
 #include <bl31/ehf.h>
+
+#include <platform_def.h>
 
 /*
  * Enumeration of priority levels on ARM platforms.

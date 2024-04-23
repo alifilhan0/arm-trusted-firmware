@@ -105,14 +105,11 @@ void arm_bl1_plat_arch_setup(void)
 		ARM_MAP_ROMLIB_CODE,
 		ARM_MAP_ROMLIB_DATA,
 #endif
-#if ARM_CRYPTOCELL_INTEG
-		ARM_MAP_BL_COHERENT_RAM,
-#endif
 		/* DRAM1_region: */
-		MAP_REGION_FLAT(					\
-			PLAT_ARM_DRAM1_BASE,				\
-			PLAT_ARM_DRAM1_SIZE,				\
-			MT_MEMORY | MT_SECURE | MT_EXECUTE		\
+		MAP_REGION_FLAT(
+			PLAT_ARM_DRAM1_BASE,
+			PLAT_ARM_DRAM1_SIZE,
+			MT_MEMORY | MT_SECURE | MT_EXECUTE
 			| MT_RW | MT_NON_CACHEABLE),
 		/* NULL terminator: */
 		{0}
@@ -154,7 +151,8 @@ void arm_bl1_platform_setup(void)
 
 	/* Set global DTB info for fixed fw_config information */
 	fw_config_max_size = ARM_FW_CONFIG_LIMIT - ARM_FW_CONFIG_BASE;
-	set_config_info(ARM_FW_CONFIG_BASE, fw_config_max_size, FW_CONFIG_ID);
+	set_config_info(ARM_FW_CONFIG_BASE, ~0UL, fw_config_max_size,
+			FW_CONFIG_ID);
 
 	assert(bl1_plat_get_image_desc(BL33_IMAGE_ID) != NULL);
 

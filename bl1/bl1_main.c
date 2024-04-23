@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2023, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -15,8 +15,11 @@
 #include <common/bl_common.h>
 #include <common/debug.h>
 #include <drivers/auth/auth_mod.h>
+#include <drivers/auth/crypto_mod.h>
 #include <drivers/console.h>
-#include <lib/cpus/errata_report.h>
+#include <lib/bootmarker_capture.h>
+#include <lib/cpus/errata.h>
+#include <lib/pmf/pmf.h>
 #include <lib/utils.h>
 #include <plat/common/platform.h>
 #include <smccc_helpers.h>
@@ -28,6 +31,11 @@ static void bl1_load_bl2(void);
 
 #if ENABLE_PAUTH
 uint64_t bl1_apiakey[2];
+#endif
+
+#if ENABLE_RUNTIME_INSTRUMENTATION
+	PMF_REGISTER_SERVICE(bl_svc, PMF_RT_INSTR_SVC_ID,
+		BL_TOTAL_IDS, PMF_DUMP_ENABLE)
 #endif
 
 /*******************************************************************************
@@ -80,6 +88,10 @@ void bl1_main(void)
 {
 	unsigned int image_id;
 
+#if ENABLE_RUNTIME_INSTRUMENTATION
+	PMF_CAPTURE_TIMESTAMP(bl_svc, BL1_ENTRY, PMF_CACHE_MAINT);
+#endif
+
 	/* Announce our arrival */
 	NOTICE(FIRMWARE_WELCOME_STR);
 	NOTICE("BL1: %s\n", version_string);
@@ -121,10 +133,10 @@ void bl1_main(void)
 	/* Perform remaining generic architectural setup from EL3 */
 	bl1_arch_setup();
 
-#if TRUSTED_BOARD_BOOT
+	crypto_mod_init();
+
 	/* Initialize authentication module */
 	auth_mod_init();
-#endif /* TRUSTED_BOARD_BOOT */
 
 	/* Initialize the measured boot */
 	bl1_plat_mboot_init();
@@ -154,6 +166,10 @@ void bl1_main(void)
 	bl1_plat_mboot_finish();
 
 	bl1_prepare_next_image(image_id);
+
+#if ENABLE_RUNTIME_INSTRUMENTATION
+	PMF_CAPTURE_TIMESTAMP(bl_svc, BL1_EXIT, PMF_CACHE_MAINT);
+#endif
 
 	console_flush();
 }

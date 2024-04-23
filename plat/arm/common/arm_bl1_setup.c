@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2022, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -11,6 +11,7 @@
 #include <arch.h>
 #include <bl1/bl1.h>
 #include <common/bl_common.h>
+#include <common/debug.h>
 #include <lib/fconf/fconf.h>
 #include <lib/fconf/fconf_dyn_cfg_getter.h>
 #include <lib/utils.h>
@@ -107,11 +108,8 @@ void bl1_early_platform_setup(void)
  *****************************************************************************/
 void arm_bl1_plat_arch_setup(void)
 {
-#if USE_COHERENT_MEM && !ARM_CRYPTOCELL_INTEG
-	/*
-	 * Ensure ARM platforms don't use coherent memory in BL1 unless
-	 * cryptocell integration is enabled.
-	 */
+#if USE_COHERENT_MEM
+	/* Ensure ARM platforms don't use coherent memory in BL1. */
 	assert((BL_COHERENT_RAM_END - BL_COHERENT_RAM_BASE) == 0U);
 #endif
 
@@ -121,9 +119,6 @@ void arm_bl1_plat_arch_setup(void)
 #if USE_ROMLIB
 		ARM_MAP_ROMLIB_CODE,
 		ARM_MAP_ROMLIB_DATA,
-#endif
-#if ARM_CRYPTOCELL_INTEG
-		ARM_MAP_BL_COHERENT_RAM,
 #endif
 		{0}
 	};
@@ -166,7 +161,7 @@ void arm_bl1_platform_setup(void)
 
 	/* Set global DTB info for fixed fw_config information */
 	fw_config_max_size = ARM_FW_CONFIG_LIMIT - ARM_FW_CONFIG_BASE;
-	set_config_info(ARM_FW_CONFIG_BASE, fw_config_max_size, FW_CONFIG_ID);
+	set_config_info(ARM_FW_CONFIG_BASE, ~0UL, fw_config_max_size, FW_CONFIG_ID);
 
 	/* Fill the device tree information struct with the info from the config dtb */
 	err = fconf_load_config(FW_CONFIG_ID);
@@ -202,10 +197,10 @@ void arm_bl1_platform_setup(void)
 	assert(desc != NULL);
 	desc->ep_info.args.arg0 = fw_config_info->config_addr;
 
-#if TRUSTED_BOARD_BOOT
+#if CRYPTO_SUPPORT
 	/* Share the Mbed TLS heap info with other images */
 	arm_bl1_set_mbedtls_heap();
-#endif /* TRUSTED_BOARD_BOOT */
+#endif /* CRYPTO_SUPPORT */
 
 	/*
 	 * Allow access to the System counter timer module and program

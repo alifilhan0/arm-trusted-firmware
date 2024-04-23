@@ -6,6 +6,8 @@
 
 include plat/renesas/common/common.mk
 
+ENABLE_STACK_PROTECTOR	:= strong
+
 ifndef LSI
   $(error "Error: Unknown LSI. Please use LSI=<LSI name> to specify the LSI")
 else
@@ -333,6 +335,10 @@ BL2_SOURCES	+=	common/image_decompress.c               \
 			$(ZLIB_SOURCES)
 endif
 
+ifneq (${ENABLE_STACK_PROTECTOR},0)
+BL_COMMON_SOURCES	+=	plat/renesas/rcar/rcar_stack_protector.c
+endif
+
 ifeq (${RCAR_GEN3_ULCB},1)
 BL31_SOURCES		+=	drivers/renesas/rcar/cpld/ulcb_cpld.c
 endif
@@ -365,7 +371,6 @@ clean_srecord:
 .PHONY: rcar_srecord
 rcar_srecord: $(BL2_ELF_SRC) $(BL31_ELF_SRC)
 	@echo "generating srec: ${SREC_PATH}/bl2.srec"
-	$(Q)$(OC) -O srec --srec-forceS3 ${BL2_ELF_SRC}  ${SREC_PATH}/bl2.srec
+	$(Q)$($(ARCH)-oc) -O srec --srec-forceS3 ${BL2_ELF_SRC}  ${SREC_PATH}/bl2.srec
 	@echo "generating srec: ${SREC_PATH}/bl31.srec"
-	$(Q)$(OC) -O srec --srec-forceS3 ${BL31_ELF_SRC} ${SREC_PATH}/bl31.srec
-
+	$(Q)$($(ARCH)-oc) -O srec --srec-forceS3 ${BL31_ELF_SRC} ${SREC_PATH}/bl31.srec

@@ -40,6 +40,24 @@ You can find additional definitions in the `Arm Glossary`_.
       Common Vulnerabilities and Exposures. A CVE document is commonly used to
       describe a publicly-known security vulnerability.
 
+   DICE
+      Device Identifier Composition Engine
+
+   DCE
+      DRTM Configuration Environment
+
+   D-CRTM
+      Dynamic Code Root of Trust for Measurement
+
+   DLME
+      Dynamically Launched Measured Environment
+
+   DRTM
+      Dynamic Root of Trust for Measurement
+
+   DPE
+      DICE Protection Environment
+
    DS-5
       Arm Development Studio 5
 
@@ -57,6 +75,9 @@ You can find additional definitions in the `Arm Glossary`_.
 
    EHF
       Exception Handling Framework
+
+   ERRATA_ABI
+      Errata management firmware interface
 
    FCONF
       Firmware Configuration Framework
@@ -85,6 +106,9 @@ You can find additional definitions in the `Arm Glossary`_.
    Linaro
       A collaborative engineering organization consolidating
       and optimizing open source software and tools for the Arm architecture.
+
+   LSP
+      A logical secure partition managed by SPM
 
    MMU
       Memory Management Unit
@@ -123,6 +147,9 @@ You can find additional definitions in the `Arm Glossary`_.
 
    PSA
       Platform Security Architecture
+
+   PSR
+     Platform Security Requirements
 
    PSCI
       Power State Coordination Interface
@@ -172,6 +199,9 @@ You can find additional definitions in the `Arm Glossary`_.
    SPM
       Secure Partition Manager
 
+   SRTM
+      Static Root of Trust for Measurement
+
    SSBS
       Speculative Store Bypass Safe. Introduced in Armv8.5, this configuration
       bit can be set by software to allow or prevent the hardware from
@@ -185,6 +215,12 @@ You can find additional definitions in the `Arm Glossary`_.
 
    TBBR
       Trusted Board Boot Requirements
+
+   TCB
+      Trusted Compute Base
+
+   TCG
+      Trusted Computing Group
 
    TEE
       Trusted Execution Environment
@@ -201,8 +237,11 @@ You can find additional definitions in the `Arm Glossary`_.
    TLK
       Trusted Little Kernel. A Trusted OS from NVIDIA.
 
+   TPM
+      Trusted Platform Module
+
    TRNG
-      True Randon Number Generator (hardware based)
+      True Random Number Generator (hardware based)
 
    TSP
       Test Secure Payload

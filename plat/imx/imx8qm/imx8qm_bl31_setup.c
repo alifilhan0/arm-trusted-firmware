@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -19,7 +19,7 @@
 #include <drivers/console.h>
 #include <lib/el3_runtime/context_mgmt.h>
 #include <lib/mmio.h>
-#include <lib/xlat_tables/xlat_tables.h>
+#include <lib/xlat_tables/xlat_tables_v2.h>
 #include <plat/common/platform.h>
 
 #include <imx8qm_pads.h>
@@ -62,7 +62,7 @@ static entry_point_info_t bl33_image_ep_info;
 #error "Provide proper UART number in IMX_DEBUG_UART"
 #endif
 
-const static int imx8qm_cci_map[] = {
+static const int imx8qm_cci_map[] = {
 	CLUSTER0_CCI_SLVAE_IFACE,
 	CLUSTER1_CCI_SLVAE_IFACE
 };

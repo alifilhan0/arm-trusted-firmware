@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2017-2024, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -20,14 +20,20 @@
 #include <k3_gicv3.h>
 #include <ti_sci.h>
 
+#define ADDR_DOWN(_adr) (_adr & XLAT_ADDR_MASK(2U))
+#define SIZE_UP(_adr, _sz) (round_up((_adr + _sz), XLAT_BLOCK_SIZE(2U)) - ADDR_DOWN(_adr))
+
+#define K3_MAP_REGION_FLAT(_adr, _sz, _attr) \
+	MAP_REGION_FLAT(ADDR_DOWN(_adr), SIZE_UP(_adr, _sz), _attr)
+
 /* Table of regions to map using the MMU */
 const mmap_region_t plat_k3_mmap[] = {
-	MAP_REGION_FLAT(K3_USART_BASE,       K3_USART_SIZE,       MT_DEVICE | MT_RW | MT_SECURE),
-	MAP_REGION_FLAT(K3_GIC_BASE,         K3_GIC_SIZE,         MT_DEVICE | MT_RW | MT_SECURE),
-	MAP_REGION_FLAT(K3_GTC_BASE,         K3_GTC_SIZE,         MT_DEVICE | MT_RW | MT_SECURE),
-	MAP_REGION_FLAT(SEC_PROXY_RT_BASE,   SEC_PROXY_RT_SIZE,   MT_DEVICE | MT_RW | MT_SECURE),
-	MAP_REGION_FLAT(SEC_PROXY_SCFG_BASE, SEC_PROXY_SCFG_SIZE, MT_DEVICE | MT_RW | MT_SECURE),
-	MAP_REGION_FLAT(SEC_PROXY_DATA_BASE, SEC_PROXY_DATA_SIZE, MT_DEVICE | MT_RW | MT_SECURE),
+	K3_MAP_REGION_FLAT(K3_USART_BASE,       K3_USART_SIZE,       MT_DEVICE | MT_RW | MT_SECURE),
+	K3_MAP_REGION_FLAT(K3_GIC_BASE,         K3_GIC_SIZE,         MT_DEVICE | MT_RW | MT_SECURE),
+	K3_MAP_REGION_FLAT(K3_GTC_BASE,         K3_GTC_SIZE,         MT_DEVICE | MT_RW | MT_SECURE),
+	K3_MAP_REGION_FLAT(SEC_PROXY_RT_BASE,   SEC_PROXY_RT_SIZE,   MT_DEVICE | MT_RW | MT_SECURE),
+	K3_MAP_REGION_FLAT(SEC_PROXY_SCFG_BASE, SEC_PROXY_SCFG_SIZE, MT_DEVICE | MT_RW | MT_SECURE),
+	K3_MAP_REGION_FLAT(SEC_PROXY_DATA_BASE, SEC_PROXY_DATA_SIZE, MT_DEVICE | MT_RW | MT_SECURE),
 	{ /* sentinel */ }
 };
 
@@ -63,11 +69,8 @@ static uint32_t k3_get_spsr_for_bl33_entry(void)
 void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 				u_register_t arg2, u_register_t arg3)
 {
-	/* There are no parameters from BL2 if BL31 is a reset vector */
-	assert(arg0 == 0U);
-	assert(arg1 == 0U);
-
-	bl31_console_setup();
+	/* Initialize the console to provide early debug support */
+	k3_console_setup();
 
 #ifdef BL32_BASE
 	/* Populate entry point information for BL32 */
@@ -116,10 +119,44 @@ void bl31_plat_arch_setup(void)
 
 void bl31_platform_setup(void)
 {
+	struct ti_sci_msg_version version;
+	int ret;
+
 	k3_gic_driver_init(K3_GIC_BASE);
 	k3_gic_init();
 
-	ti_sci_init();
+	ret = ti_sci_get_revision(&version);
+	if (ret) {
+		ERROR("Unable to communicate with the control firmware (%d)\n", ret);
+		return;
+	}
+
+	INFO("SYSFW ABI: %d.%d (firmware rev 0x%04x '%s')\n",
+	     version.abi_major, version.abi_minor,
+	     version.firmware_revision,
+	     version.firmware_description);
+
+	/*
+	 * Older firmware have a timing issue with DM that crashes few TF-A
+	 * lite devices while trying to make calls to DM. Since there is no way
+	 * to detect what current DM version we are running - we rely on the
+	 * corresponding TIFS versioning to handle this check and ensure that
+	 * the platform boots up
+	 *
+	 * Upgrading to TIFS version 9.1.7 along with the corresponding DM from
+	 * ti-linux-firmware will enable this functionality.
+	 */
+	if (version.firmware_revision > 9 ||
+	    (version.firmware_revision == 9 && version.sub_version > 1) ||
+	    (version.firmware_revision == 9 && version.sub_version == 1 &&
+		 version.patch_version >= 7)
+	) {
+		if (ti_sci_device_get(PLAT_BOARD_DEVICE_ID)) {
+			WARN("Unable to take system power reference\n");
+		}
+	} else {
+		NOTICE("Upgrade Firmwares for Power off functionality\n");
+	}
 }
 
 void platform_mem_init(void)
@@ -162,14 +199,6 @@ unsigned int plat_get_syscnt_freq2(void)
 	      SYS_COUNTER_FREQ_IN_TICKS);
 
 	return SYS_COUNTER_FREQ_IN_TICKS;
-}
-
-/*
- * Empty function to prevent the console from being uninitialized after BL33 is
- * started and allow us to see messages from BL31.
- */
-void bl31_plat_runtime_setup(void)
-{
 }
 
 /*******************************************************************************

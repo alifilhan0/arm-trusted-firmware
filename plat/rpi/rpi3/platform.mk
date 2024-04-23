@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2013-2020, ARM Limited and Contributors. All rights reserved.
+# Copyright (c) 2013-2024, Arm Limited and Contributors. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -17,6 +17,7 @@ PLAT_BL_COMMON_SOURCES	:=	drivers/ti/uart/aarch64/16550_console.S	\
 				drivers/rpi3/gpio/rpi3_gpio.c		\
 				plat/rpi/common/aarch64/plat_helpers.S	\
 				plat/rpi/common/rpi3_common.c		\
+				plat/rpi/common/rpi3_console_dual.c	\
 				${XLAT_TABLES_LIB_SRCS}
 
 BL1_SOURCES		+=	drivers/io/io_fip.c			\
@@ -44,6 +45,7 @@ BL2_SOURCES		+=	common/desc_image_load.c		\
 				plat/rpi/common/rpi3_io_storage.c
 
 BL31_SOURCES		+=	lib/cpus/aarch64/cortex_a53.S		\
+				plat/common/plat_gicv2.c		\
 				plat/common/plat_psci_common.c		\
 				plat/rpi/rpi3/rpi3_bl31_setup.c		\
 				plat/rpi/common/rpi3_pm.c		\
@@ -51,9 +53,9 @@ BL31_SOURCES		+=	lib/cpus/aarch64/cortex_a53.S		\
 				${LIBFDT_SRCS}
 
 # Tune compiler for Cortex-A53
-ifeq ($(notdir $(CC)),armclang)
+ifeq ($($(ARCH)-cc-id),arm-clang)
     TF_CFLAGS_aarch64	+=	-mcpu=cortex-a53
-else ifneq ($(findstring clang,$(notdir $(CC))),)
+else ifneq ($(filter %-clang,$($(ARCH)-cc-id)),)
     TF_CFLAGS_aarch64	+=	-mcpu=cortex-a53
 else
     TF_CFLAGS_aarch64	+=	-mtune=cortex-a53
@@ -212,10 +214,10 @@ ifneq (${TRUSTED_BOARD_BOOT},0)
 
     $(ROT_KEY): | $(BUILD_PLAT)
 	@echo "  OPENSSL $@"
-	$(Q)openssl genrsa 2048 > $@ 2>/dev/null
+	$(Q)${OPENSSL_BIN_PATH}/openssl genrsa 2048 > $@ 2>/dev/null
 
     $(ROTPK_HASH): $(ROT_KEY)
 	@echo "  OPENSSL $@"
-	$(Q)openssl rsa -in $< -pubout -outform DER 2>/dev/null |\
-	openssl dgst -sha256 -binary > $@ 2>/dev/null
+	$(Q)${OPENSSL_BIN_PATH}/openssl rsa -in $< -pubout -outform DER 2>/dev/null |\
+	${OPENSSL_BIN_PATH}/openssl dgst -sha256 -binary > $@ 2>/dev/null
 endif

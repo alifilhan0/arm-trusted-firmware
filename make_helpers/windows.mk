@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016-2020, ARM Limited and Contributors. All rights reserved.
+# Copyright (c) 2016-2024, Arm Limited and Contributors. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -68,6 +68,9 @@ ${1} : ${2}
 	-@if exist "$(tmp_dir)"  rd /Q /S "$(tmp_dir)"
     endef
 
+    nul := nul
+
+    which = $(shell where "$(1)" 2>$(nul))
 endif
 
 # Because git is not available from CMD.EXE, we need to avoid
@@ -81,10 +84,11 @@ BUILD_STRING ?= development build
 # by defining the MAKE_BUILD_STRINGS macro.
 BUILT_TIME_DATE_STRING = const char build_message[] = "Built : "${BUILD_MESSAGE_TIMESTAMP};
 VERSION_STRING_MESSAGE = const char version_string[] = "${VERSION_STRING}";
+VERSION_MESSAGE = const char version[] = "${VERSION}";
 define MAKE_BUILD_STRINGS
-	@echo $$(BUILT_TIME_DATE_STRING) $$(VERSION_STRING_MESSAGE) | \
-		$$(CC) $$(TF_CFLAGS) $$(CFLAGS) -x c -c - -o $1
+	$$(file >$1.in,$$(TF_CFLAGS) $$(CFLAGS))
+	@echo $$(BUILT_TIME_DATE_STRING) $$(VERSION_STRING_MESSAGE) $$(VERSION_MESSAGE) | \
+		$($(ARCH)-cc) @$1.in -x c -c - -o $1
 endef
 
 MSVC_NMAKE := nmake.exe
-

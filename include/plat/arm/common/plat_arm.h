@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2024, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -13,6 +13,7 @@
 #include <lib/bakery_lock.h>
 #include <lib/cassert.h>
 #include <lib/el3_runtime/cpu_data.h>
+#include <lib/gpt_rme/gpt_rme.h>
 #include <lib/spinlock.h>
 #include <lib/utils_def.h>
 #include <lib/xlat_tables/xlat_tables_compat.h>
@@ -31,6 +32,17 @@ typedef struct arm_tzc_regions_info {
 	unsigned int nsaid_permissions;
 } arm_tzc_regions_info_t;
 
+typedef struct arm_gpt_info {
+	pas_region_t *pas_region_base;
+	unsigned int pas_region_count;
+	uintptr_t l0_base;
+	uintptr_t l1_base;
+	size_t l0_size;
+	size_t l1_size;
+	gpccr_pps_e pps;
+	gpccr_pgs_e pgs;
+} arm_gpt_info_t;
+
 /*******************************************************************************
  * Default mapping definition of the TrustZone Controller for ARM standard
  * platforms.
@@ -39,7 +51,21 @@ typedef struct arm_tzc_regions_info {
  *   - Region 1 with secure access only;
  *   - the remaining DRAM regions access from the given Non-Secure masters.
  ******************************************************************************/
-#if SPM_MM
+
+#if ENABLE_RME
+#define ARM_TZC_RME_REGIONS_DEF						    \
+	{ARM_AP_TZC_DRAM1_BASE, ARM_AP_TZC_DRAM1_END, TZC_REGION_S_RDWR, 0},\
+	{ARM_EL3_TZC_DRAM1_BASE, ARM_L1_GPT_END, TZC_REGION_S_RDWR, 0},	    \
+	{ARM_NS_DRAM1_BASE, ARM_NS_DRAM1_END, ARM_TZC_NS_DRAM_S_ACCESS,	    \
+		PLAT_ARM_TZC_NS_DEV_ACCESS},				    \
+	/* Realm and Shared area share the same PAS */		    \
+	{ARM_REALM_BASE, ARM_EL3_RMM_SHARED_END, ARM_TZC_NS_DRAM_S_ACCESS,  \
+		PLAT_ARM_TZC_NS_DEV_ACCESS},				    \
+	{ARM_DRAM2_BASE, ARM_DRAM2_END, ARM_TZC_NS_DRAM_S_ACCESS,	    \
+		PLAT_ARM_TZC_NS_DEV_ACCESS}
+#endif
+
+#if SPM_MM || (SPMC_AT_EL3 && SPMC_AT_EL3_SEL0_SP)
 #define ARM_TZC_REGIONS_DEF						\
 	{ARM_AP_TZC_DRAM1_BASE, ARM_EL3_TZC_DRAM1_END + ARM_L1_GPT_SIZE,\
 		TZC_REGION_S_RDWR, 0},					\
@@ -52,15 +78,16 @@ typedef struct arm_tzc_regions_info {
 		PLAT_ARM_TZC_NS_DEV_ACCESS}
 
 #elif ENABLE_RME
-#define ARM_TZC_REGIONS_DEF						    \
-	{ARM_AP_TZC_DRAM1_BASE, ARM_AP_TZC_DRAM1_END, TZC_REGION_S_RDWR, 0},\
-	{ARM_EL3_TZC_DRAM1_BASE, ARM_L1_GPT_END, TZC_REGION_S_RDWR, 0},	    \
-	{ARM_NS_DRAM1_BASE, ARM_NS_DRAM1_END, ARM_TZC_NS_DRAM_S_ACCESS,	    \
-		PLAT_ARM_TZC_NS_DEV_ACCESS},				    \
-	{ARM_REALM_BASE, ARM_REALM_END, ARM_TZC_NS_DRAM_S_ACCESS,	    \
-		PLAT_ARM_TZC_NS_DEV_ACCESS},				    \
-	{ARM_DRAM2_BASE, ARM_DRAM2_END, ARM_TZC_NS_DRAM_S_ACCESS,	    \
-		PLAT_ARM_TZC_NS_DEV_ACCESS}
+#if (defined(SPD_tspd) || defined(SPD_opteed) || defined(SPD_spmd)) &&  \
+MEASURED_BOOT
+#define ARM_TZC_REGIONS_DEF					        \
+	ARM_TZC_RME_REGIONS_DEF,					\
+	{ARM_EVENT_LOG_DRAM1_BASE, ARM_EVENT_LOG_DRAM1_END,             \
+		TZC_REGION_S_RDWR, 0}
+#else
+#define ARM_TZC_REGIONS_DEF					        \
+	ARM_TZC_RME_REGIONS_DEF
+#endif
 
 #else
 #define ARM_TZC_REGIONS_DEF						\
@@ -124,6 +151,12 @@ void arm_setup_romlib(void);
 #define ARM_LOCAL_PSTATE_WIDTH		4
 #define ARM_LOCAL_PSTATE_MASK		((1 << ARM_LOCAL_PSTATE_WIDTH) - 1)
 
+#if PSCI_OS_INIT_MODE
+#define ARM_LAST_AT_PLVL_MASK		(ARM_LOCAL_PSTATE_MASK <<	\
+					 (ARM_LOCAL_PSTATE_WIDTH *	\
+					  (PLAT_MAX_PWR_LVL + 1)))
+#endif /* __PSCI_OS_INIT_MODE__ */
+
 /* Macros to construct the composite power state */
 
 /* Make composite power state parameter till power level 0 */
@@ -155,10 +188,17 @@ void arm_setup_romlib(void);
 #define STATE_SW_E_DENIED		(-3)
 
 /* plat_get_rotpk_info() flags */
-#define ARM_ROTPK_REGS_ID		1
-#define ARM_ROTPK_DEVEL_RSA_ID		2
-#define ARM_ROTPK_DEVEL_ECDSA_ID	3
+#define ARM_ROTPK_REGS_ID			1
+#define ARM_ROTPK_DEVEL_RSA_ID			2
+#define ARM_ROTPK_DEVEL_ECDSA_ID		3
+#define ARM_ROTPK_DEVEL_FULL_DEV_RSA_KEY_ID	4
+#define ARM_ROTPK_DEVEL_FULL_DEV_ECDSA_KEY_ID	5
 
+#define ARM_USE_DEVEL_ROTPK							\
+	(ARM_ROTPK_LOCATION_ID == ARM_ROTPK_DEVEL_RSA_ID) ||			\
+	(ARM_ROTPK_LOCATION_ID == ARM_ROTPK_DEVEL_ECDSA_ID) ||			\
+	(ARM_ROTPK_LOCATION_ID == ARM_ROTPK_DEVEL_FULL_DEV_RSA_KEY_ID) ||	\
+	(ARM_ROTPK_LOCATION_ID == ARM_ROTPK_DEVEL_FULL_DEV_ECDSA_KEY_ID)
 
 /* IO storage utility functions */
 int arm_io_setup(void);
@@ -245,11 +285,21 @@ void arm_sp_min_plat_arch_setup(void);
 bool arm_io_is_toc_valid(void);
 
 /* Utility functions for Dynamic Config */
-void arm_bl2_dyn_cfg_init(void);
+
 void arm_bl1_set_mbedtls_heap(void);
 int arm_get_mbedtls_heap(void **heap_addr, size_t *heap_size);
 
+#if IMAGE_BL2
+void arm_bl2_dyn_cfg_init(void);
+#endif /* IMAGE_BL2 */
+
 #if MEASURED_BOOT
+#if DICE_PROTECTION_ENVIRONMENT
+int arm_set_nt_fw_info(int *ctx_handle);
+int arm_set_tb_fw_info(int *ctx_handle);
+int arm_get_tb_fw_info(int *ctx_handle);
+#else
+/* Specific to event log backend */
 int arm_set_tos_fw_info(uintptr_t log_addr, size_t log_size);
 int arm_set_nt_fw_info(
 /*
@@ -260,8 +310,11 @@ int arm_set_nt_fw_info(
 			uintptr_t log_addr,
 #endif
 			size_t log_size, uintptr_t *ns_log_addr);
-int arm_set_tb_fw_info(uintptr_t log_addr, size_t log_size);
-int arm_get_tb_fw_info(uint64_t *log_addr, size_t *log_size);
+int arm_set_tb_fw_info(uintptr_t log_addr, size_t log_size,
+		       size_t log_max_size);
+int arm_get_tb_fw_info(uint64_t *log_addr, size_t *log_size,
+		       size_t *log_max_size);
+#endif /* DICE_PROTECTION_ENVIRONMENT */
 #endif /* MEASURED_BOOT */
 
 /*
@@ -296,6 +349,7 @@ void plat_arm_interconnect_exit_coherency(void);
 void plat_arm_program_trusted_mailbox(uintptr_t address);
 bool plat_arm_bl1_fwu_needed(void);
 __dead2 void plat_arm_error_handler(int err);
+__dead2 void plat_arm_system_reset(void);
 
 /*
  * Optional functions in ARM standard platforms
@@ -331,6 +385,9 @@ int plat_arm_get_alt_image_source(
 unsigned int plat_arm_calc_core_pos(u_register_t mpidr);
 const mmap_region_t *plat_arm_get_mmap(void);
 
+const arm_gpt_info_t *plat_arm_get_gpt_info(void);
+void arm_gpt_setup(void);
+
 /* Allow platform to override psci_pm_ops during runtime */
 const plat_psci_ops_t *plat_arm_psci_override_pm_ops(plat_psci_ops_t *ops);
 
@@ -354,6 +411,7 @@ extern const unsigned int arm_pm_idle_states[];
 /* secure watchdog */
 void plat_arm_secure_wdt_start(void);
 void plat_arm_secure_wdt_stop(void);
+void plat_arm_secure_wdt_refresh(void);
 
 /* Get SOC-ID of ARM platform */
 uint32_t plat_arm_get_soc_id(void);

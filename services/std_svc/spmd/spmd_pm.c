@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2020-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -18,21 +18,6 @@ static struct {
 	uintptr_t secondary_ep;
 	spinlock_t lock;
 } g_spmd_pm;
-
-/*******************************************************************************
- * spmd_build_spmc_message
- *
- * Builds an SPMD to SPMC direct message request.
- ******************************************************************************/
-static void spmd_build_spmc_message(gp_regs_t *gpregs, unsigned long long message)
-{
-	write_ctx_reg(gpregs, CTX_GPREG_X0, FFA_MSG_SEND_DIRECT_REQ_SMC32);
-	write_ctx_reg(gpregs, CTX_GPREG_X1,
-		(SPMD_DIRECT_MSG_ENDPOINT_ID << FFA_DIRECT_MSG_SOURCE_SHIFT) |
-		spmd_spmc_id_get());
-	write_ctx_reg(gpregs, CTX_GPREG_X2, FFA_PARAM_MBZ);
-	write_ctx_reg(gpregs, CTX_GPREG_X3, message);
-}
 
 /*******************************************************************************
  * spmd_pm_secondary_ep_register
@@ -137,7 +122,20 @@ static int32_t spmd_cpu_off_handler(u_register_t unused)
 	assert(ctx->state != SPMC_STATE_OFF);
 
 	/* Build an SPMD to SPMC direct message request. */
-	spmd_build_spmc_message(get_gpregs_ctx(&ctx->cpu_ctx), PSCI_CPU_OFF);
+	gp_regs_t *gpregs = get_gpregs_ctx(&ctx->cpu_ctx);
+	spmd_build_spmc_message(gpregs, FFA_FWK_MSG_PSCI, PSCI_CPU_OFF);
+
+	/* Clear remaining x8 - x17 at EL3/SEL2 or EL3/SEL1 boundary. */
+	write_ctx_reg(gpregs, CTX_GPREG_X8, 0);
+	write_ctx_reg(gpregs, CTX_GPREG_X9, 0);
+	write_ctx_reg(gpregs, CTX_GPREG_X10, 0);
+	write_ctx_reg(gpregs, CTX_GPREG_X11, 0);
+	write_ctx_reg(gpregs, CTX_GPREG_X12, 0);
+	write_ctx_reg(gpregs, CTX_GPREG_X13, 0);
+	write_ctx_reg(gpregs, CTX_GPREG_X14, 0);
+	write_ctx_reg(gpregs, CTX_GPREG_X15, 0);
+	write_ctx_reg(gpregs, CTX_GPREG_X16, 0);
+	write_ctx_reg(gpregs, CTX_GPREG_X17, 0);
 
 	rc = spmd_spm_core_sync_entry(ctx);
 	if (rc != 0ULL) {

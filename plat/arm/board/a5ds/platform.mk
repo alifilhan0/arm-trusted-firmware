@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2019-2021, Arm Limited. All rights reserved.
+# Copyright (c) 2019-2023, Arm Limited. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -98,7 +98,11 @@ endif
 
 NEED_BL32 := yes
 
-MULTI_CONSOLE_API		:=	1
+ifeq (${AARCH32_SP},none)
+    $(error Variable AARCH32_SP has to be set for AArch32)
+endif
+
+ARM_DISABLE_TRUSTED_WDOG	:=	1
 
 PLAT_BL_COMMON_SOURCES	+=	lib/xlat_tables/aarch32/nonlpae_tables.c
 

@@ -2,7 +2,7 @@
  * Texas Instruments System Control Interface Driver
  *   Based on Linux and U-Boot implementation
  *
- * Copyright (C) 2018 Texas Instruments Incorporated - http://www.ti.com/
+ * Copyright (C) 2018-2024 Texas Instruments Incorporated - https://www.ti.com/
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include <platform_def.h>
+#include <lib/bakery_lock.h>
 
 #include <common/debug.h>
 #include <sec_proxy.h>
@@ -21,9 +22,11 @@
 #include "ti_sci.h"
 
 #if USE_COHERENT_MEM
-__section("tzfw_coherent_mem")
+__section(".tzfw_coherent_mem")
 #endif
 static uint8_t message_sequence;
+
+DEFINE_BAKERY_LOCK(ti_sci_xfer_lock);
 
 /**
  * struct ti_sci_xfer - Structure representing a message flow
@@ -62,7 +65,6 @@ static int ti_sci_setup_one_xfer(uint16_t msg_type, uint32_t msg_flags,
 	/* Ensure we have sane transfer sizes */
 	if (rx_message_size > TI_SCI_MAX_MESSAGE_SIZE ||
 	    tx_message_size > TI_SCI_MAX_MESSAGE_SIZE ||
-	    rx_message_size < sizeof(*hdr) ||
 	    tx_message_size < sizeof(*hdr))
 		return -ERANGE;
 
@@ -70,7 +72,11 @@ static int ti_sci_setup_one_xfer(uint16_t msg_type, uint32_t msg_flags,
 	hdr->seq = ++message_sequence;
 	hdr->type = msg_type;
 	hdr->host = TI_SCI_HOST_ID;
-	hdr->flags = msg_flags | TI_SCI_FLAG_REQ_ACK_ON_PROCESSED;
+	hdr->flags = msg_flags;
+	/* Request a response if rx_message_size is non-zero */
+	if (rx_message_size != 0U) {
+		hdr->flags |= TI_SCI_FLAG_REQ_ACK_ON_PROCESSED;
+	}
 
 	xfer->tx_message.buf = tx_buf;
 	xfer->tx_message.len = tx_message_size;
@@ -89,10 +95,9 @@ static int ti_sci_setup_one_xfer(uint16_t msg_type, uint32_t msg_flags,
  *
  * Return: 0 if all goes well, else appropriate error message
  */
-static inline int ti_sci_get_response(struct ti_sci_xfer *xfer,
-				      enum k3_sec_proxy_chan_id chan)
+static int ti_sci_get_response(struct k3_sec_proxy_msg *msg,
+			       enum k3_sec_proxy_chan_id chan)
 {
-	struct k3_sec_proxy_msg *msg = &xfer->rx_message;
 	struct ti_sci_msg_hdr *hdr;
 	unsigned int retry = 5;
 	int ret;
@@ -138,33 +143,41 @@ static inline int ti_sci_get_response(struct ti_sci_xfer *xfer,
  *
  * Return: 0 if all goes well, else appropriate error message
  */
-static inline int ti_sci_do_xfer(struct ti_sci_xfer *xfer)
+static int ti_sci_do_xfer(struct ti_sci_xfer *xfer)
 {
-	struct k3_sec_proxy_msg *msg = &xfer->tx_message;
+	struct k3_sec_proxy_msg *tx_msg = &xfer->tx_message;
+	struct k3_sec_proxy_msg *rx_msg = &xfer->rx_message;
 	int ret;
+
+	bakery_lock_get(&ti_sci_xfer_lock);
 
 	/* Clear any spurious messages in receive queue */
 	ret = k3_sec_proxy_clear_rx_thread(SP_RESPONSE);
 	if (ret) {
 		ERROR("Could not clear response queue (%d)\n", ret);
-		return ret;
+		goto unlock;
 	}
 
 	/* Send the message */
-	ret = k3_sec_proxy_send(SP_HIGH_PRIORITY, msg);
+	ret = k3_sec_proxy_send(SP_HIGH_PRIORITY, tx_msg);
 	if (ret) {
 		ERROR("Message sending failed (%d)\n", ret);
-		return ret;
+		goto unlock;
 	}
 
-	/* Get the response */
-	ret = ti_sci_get_response(xfer, SP_RESPONSE);
-	if (ret) {
-		ERROR("Failed to get response (%d)\n", ret);
-		return ret;
+	/* Get the response if requested */
+	if (rx_msg->len != 0U) {
+		ret = ti_sci_get_response(rx_msg, SP_RESPONSE);
+		if (ret != 0U) {
+			ERROR("Failed to get response (%d)\n", ret);
+			goto unlock;
+		}
 	}
 
-	return 0;
+unlock:
+	bakery_lock_release(&ti_sci_xfer_lock);
+
+	return ret;
 }
 
 /**
@@ -172,17 +185,20 @@ static inline int ti_sci_do_xfer(struct ti_sci_xfer *xfer)
  *
  * Updates the SCI information in the internal data structure.
  *
+ * @version: Structure containing the version info
+ *
  * Return: 0 if all goes well, else appropriate error message
  */
-int ti_sci_get_revision(struct ti_sci_msg_resp_version *rev_info)
+int ti_sci_get_revision(struct ti_sci_msg_version *version)
 {
+	struct ti_sci_msg_resp_version rev_info;
 	struct ti_sci_msg_hdr hdr;
 	struct ti_sci_xfer xfer;
 	int ret;
 
 	ret = ti_sci_setup_one_xfer(TI_SCI_MSG_VERSION, 0x0,
 				    &hdr, sizeof(hdr),
-				    rev_info, sizeof(*rev_info),
+				    &rev_info, sizeof(rev_info),
 				    &xfer);
 	if (ret) {
 		ERROR("Message alloc failed (%d)\n", ret);
@@ -194,6 +210,50 @@ int ti_sci_get_revision(struct ti_sci_msg_resp_version *rev_info)
 		ERROR("Transfer send failed (%d)\n", ret);
 		return ret;
 	}
+
+	memcpy(version->firmware_description, rev_info.firmware_description,
+		sizeof(rev_info.firmware_description));
+	version->abi_major = rev_info.abi_major;
+	version->abi_minor = rev_info.abi_minor;
+	version->firmware_revision = rev_info.firmware_revision;
+	version->sub_version = rev_info.sub_version;
+	version->patch_version = rev_info.patch_version;
+
+	return 0;
+}
+
+/**
+ * ti_sci_query_fw_caps() - Get the FW/SoC capabilities
+ * @handle:		Pointer to TI SCI handle
+ * @fw_caps:		Each bit in fw_caps indicating one FW/SOC capability
+ *
+ * Return: 0 if all went well, else returns appropriate error value.
+ */
+int ti_sci_query_fw_caps(uint64_t *fw_caps)
+{
+	struct ti_sci_msg_hdr req;
+	struct ti_sci_msg_resp_query_fw_caps resp;
+
+	struct ti_sci_xfer xfer;
+	int ret;
+
+	ret = ti_sci_setup_one_xfer(TI_SCI_MSG_QUERY_FW_CAPS, 0,
+				    &req, sizeof(req),
+				    &resp, sizeof(resp),
+				    &xfer);
+	if (ret != 0U) {
+		ERROR("Message alloc failed (%d)\n", ret);
+		return ret;
+	}
+
+	ret = ti_sci_do_xfer(&xfer);
+	if (ret != 0U) {
+		ERROR("Transfer send failed (%d)\n", ret);
+		return ret;
+	}
+
+	if (fw_caps)
+		*fw_caps = resp.fw_caps;
 
 	return 0;
 }
@@ -398,35 +458,27 @@ int ti_sci_device_put(uint32_t id)
 int ti_sci_device_put_no_wait(uint32_t id)
 {
 	struct ti_sci_msg_req_set_device_state req;
-	struct ti_sci_msg_hdr *hdr;
-	struct k3_sec_proxy_msg tx_message;
+	struct ti_sci_xfer xfer;
 	int ret;
 
-	/* Ensure we have sane transfer size */
-	if (sizeof(req) > TI_SCI_MAX_MESSAGE_SIZE)
-		return -ERANGE;
-
-	hdr = (struct ti_sci_msg_hdr *)&req;
-	hdr->seq = ++message_sequence;
-	hdr->type = TI_SCI_MSG_SET_DEVICE_STATE;
-	hdr->host = TI_SCI_HOST_ID;
-	/* Setup with NORESPONSE flag to keep response queue clean */
-	hdr->flags = TI_SCI_FLAG_REQ_GENERIC_NORESPONSE;
+	ret = ti_sci_setup_one_xfer(TI_SCI_MSG_SET_DEVICE_STATE, 0,
+				    &req, sizeof(req),
+				    NULL, 0,
+				    &xfer);
+	if (ret != 0U) {
+		ERROR("Message alloc failed (%d)\n", ret);
+		return ret;
+	}
 
 	req.id = id;
 	req.state = MSG_DEVICE_SW_STATE_AUTO_OFF;
 
-	tx_message.buf = (uint8_t *)&req;
-	tx_message.len = sizeof(req);
-
-	 /* Send message */
-	ret = k3_sec_proxy_send(SP_HIGH_PRIORITY, &tx_message);
-	if (ret) {
-		ERROR("Message sending failed (%d)\n", ret);
+	ret = ti_sci_do_xfer(&xfer);
+	if (ret != 0U) {
+		ERROR("Transfer send failed (%d)\n", ret);
 		return ret;
 	}
 
-	/* Return without waiting for response */
 	return 0;
 }
 
@@ -1382,36 +1434,28 @@ int ti_sci_proc_set_boot_ctrl_no_wait(uint8_t proc_id,
 				      uint32_t control_flags_clear)
 {
 	struct ti_sci_msg_req_set_proc_boot_ctrl req;
-	struct ti_sci_msg_hdr *hdr;
-	struct k3_sec_proxy_msg tx_message;
+	struct ti_sci_xfer xfer;
 	int ret;
 
-	/* Ensure we have sane transfer size */
-	if (sizeof(req) > TI_SCI_MAX_MESSAGE_SIZE)
-		return -ERANGE;
-
-	hdr = (struct ti_sci_msg_hdr *)&req;
-	hdr->seq = ++message_sequence;
-	hdr->type = TISCI_MSG_SET_PROC_BOOT_CTRL;
-	hdr->host = TI_SCI_HOST_ID;
-	/* Setup with NORESPONSE flag to keep response queue clean */
-	hdr->flags = TI_SCI_FLAG_REQ_GENERIC_NORESPONSE;
+	ret = ti_sci_setup_one_xfer(TISCI_MSG_SET_PROC_BOOT_CTRL, 0,
+				    &req, sizeof(req),
+				    NULL, 0,
+				    &xfer);
+	if (ret != 0U) {
+		ERROR("Message alloc failed (%d)\n", ret);
+		return ret;
+	}
 
 	req.processor_id = proc_id;
 	req.control_flags_set = control_flags_set;
 	req.control_flags_clear = control_flags_clear;
 
-	tx_message.buf = (uint8_t *)&req;
-	tx_message.len = sizeof(req);
-
-	 /* Send message */
-	ret = k3_sec_proxy_send(SP_HIGH_PRIORITY, &tx_message);
-	if (ret) {
-		ERROR("Message sending failed (%d)\n", ret);
+	ret = ti_sci_do_xfer(&xfer);
+	if (ret != 0U) {
+		ERROR("Transfer send failed (%d)\n", ret);
 		return ret;
 	}
 
-	/* Return without waiting for response */
 	return 0;
 }
 
@@ -1432,7 +1476,7 @@ int ti_sci_proc_auth_boot_image(uint8_t proc_id, uint64_t cert_addr)
 	struct ti_sci_xfer xfer;
 	int ret;
 
-	ret = ti_sci_setup_one_xfer(TISCI_MSG_PROC_AUTH_BOOT_IMIAGE, 0,
+	ret = ti_sci_setup_one_xfer(TISCI_MSG_PROC_AUTH_BOOT_IMAGE, 0,
 				    &req, sizeof(req),
 				    &resp, sizeof(resp),
 				    &xfer);
@@ -1624,20 +1668,17 @@ int ti_sci_proc_wait_boot_status_no_wait(uint8_t proc_id,
 					 uint32_t status_flags_1_clr_any_wait)
 {
 	struct ti_sci_msg_req_wait_proc_boot_status req;
-	struct ti_sci_msg_hdr *hdr;
-	struct k3_sec_proxy_msg tx_message;
+	struct ti_sci_xfer xfer;
 	int ret;
 
-	/* Ensure we have sane transfer size */
-	if (sizeof(req) > TI_SCI_MAX_MESSAGE_SIZE)
-		return -ERANGE;
-
-	hdr = (struct ti_sci_msg_hdr *)&req;
-	hdr->seq = ++message_sequence;
-	hdr->type = TISCI_MSG_WAIT_PROC_BOOT_STATUS;
-	hdr->host = TI_SCI_HOST_ID;
-	/* Setup with NORESPONSE flag to keep response queue clean */
-	hdr->flags = TI_SCI_FLAG_REQ_GENERIC_NORESPONSE;
+	ret = ti_sci_setup_one_xfer(TISCI_MSG_WAIT_PROC_BOOT_STATUS, 0,
+				    &req, sizeof(req),
+				    NULL, 0,
+				    &xfer);
+	if (ret != 0U) {
+		ERROR("Message alloc failed (%d)\n", ret);
+		return ret;
+	}
 
 	req.processor_id = proc_id;
 	req.num_wait_iterations = num_wait_iterations;
@@ -1649,40 +1690,53 @@ int ti_sci_proc_wait_boot_status_no_wait(uint8_t proc_id,
 	req.status_flags_1_clr_all_wait = status_flags_1_clr_all_wait;
 	req.status_flags_1_clr_any_wait = status_flags_1_clr_any_wait;
 
-	tx_message.buf = (uint8_t *)&req;
-	tx_message.len = sizeof(req);
-
-	 /* Send message */
-	ret = k3_sec_proxy_send(SP_HIGH_PRIORITY, &tx_message);
-	if (ret) {
-		ERROR("Message sending failed (%d)\n", ret);
+	ret = ti_sci_do_xfer(&xfer);
+	if (ret != 0U) {
+		ERROR("Transfer send failed (%d)\n", ret);
 		return ret;
 	}
 
-	/* Return without waiting for response */
 	return 0;
 }
 
 /**
- * ti_sci_init() - Basic initialization
+ * ti_sci_enter_sleep - Command to initiate system transition into suspend.
+ *
+ * @proc_id: Processor ID.
+ * @mode: Low power mode to enter.
+ * @core_resume_addr: Address that core should be
+ *		      resumed from after low power transition.
  *
  * Return: 0 if all goes well, else appropriate error message
  */
-int ti_sci_init(void)
+int ti_sci_enter_sleep(uint8_t proc_id,
+		       uint8_t mode,
+		       uint64_t core_resume_addr)
 {
-	struct ti_sci_msg_resp_version rev_info;
+	struct ti_sci_msg_req_enter_sleep req;
+	struct ti_sci_xfer xfer;
 	int ret;
 
-	ret = ti_sci_get_revision(&rev_info);
-	if (ret) {
-		ERROR("Unable to communicate with control firmware (%d)\n", ret);
+	ret = ti_sci_setup_one_xfer(TI_SCI_MSG_ENTER_SLEEP, 0,
+				    &req, sizeof(req),
+				    NULL, 0,
+				    &xfer);
+	if (ret != 0U) {
+		ERROR("Message alloc failed (%d)\n", ret);
 		return ret;
 	}
 
-	INFO("SYSFW ABI: %d.%d (firmware rev 0x%04x '%s')\n",
-	     rev_info.abi_major, rev_info.abi_minor,
-	     rev_info.firmware_revision,
-	     rev_info.firmware_description);
+	req.processor_id = proc_id;
+	req.mode = mode;
+	req.core_resume_lo = core_resume_addr & TISCI_ADDR_LOW_MASK;
+	req.core_resume_hi = (core_resume_addr & TISCI_ADDR_HIGH_MASK) >>
+			     TISCI_ADDR_HIGH_SHIFT;
+
+	ret = ti_sci_do_xfer(&xfer);
+	if (ret != 0U) {
+		ERROR("Transfer send failed (%d)\n", ret);
+		return ret;
+	}
 
 	return 0;
 }

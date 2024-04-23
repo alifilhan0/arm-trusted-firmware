@@ -4,12 +4,11 @@ Platform Ports
 .. toctree::
    :maxdepth: 1
    :caption: Contents
-   :numbered:
    :hidden:
 
    allwinner
    arm/index
-   deprecated
+   ast2700
    meson-axg
    meson-gxbb
    meson-gxl
@@ -21,27 +20,33 @@ Platform Ports
    marvell/index
    mt8183
    mt8186
+   mt8188
    mt8192
    mt8195
    nvidia-tegra
    warp7
    imx8
    imx8m
-   ls1043a
+   imx8ulp
+   imx9
+   npcm845x
    nxp/index
    poplar
    qemu
    qemu-sbsa
    qti
+   qti-msm8916
    rpi3
    rpi4
+   rpi5
    rcar-gen3
    rz-g2
    rockchip
    socionext-uniphier
    synquacer
-   stm32mp1
+   st/index
    ti-k3
+   xilinx-versal-net
    xilinx-versal
    xilinx-zynqmp
    brcm-stingray
@@ -56,11 +61,20 @@ documentation associated with them.
 
    - Arm Neoverse N1 System Development Platform (N1SDP)
    - Arm Neoverse Reference Design N1 Edge (RD-N1-Edge) FVP
-   - Arm Neoverse Reference Design E1 Edge (RD-E1-Edge) FVP
-   - Arm SGI-575 and SGM-775
-   - MediaTek MT6795 and MT8173 SoCs
-   - Arm Morello Platform
+   - Arm SGI-575
+   - MediaTek MT8173 SoCs
+
+Deprecated platforms
+--------------------
+
++----------------+----------------+--------------------+--------------------+
+|    Platform    |     Vendor     | Deprecated version |  Deleted version   |
++================+================+====================+====================+
+|    sgi575      |      Arm       |        2.8         |       TBD          |
++----------------+----------------+--------------------+--------------------+
+|    rdn1edge    |      Arm       |        2.8         |       TBD          |
++----------------+----------------+--------------------+--------------------+
 
 --------------
 
-*Copyright (c) 2019-2020, Arm Limited. All rights reserved.*
+*Copyright (c) 2019-2024, Arm Limited. All rights reserved.*

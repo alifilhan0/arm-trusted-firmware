@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2020-2024, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -12,6 +12,8 @@
 #include <common/bl_common.h>
 #include <common/debug.h>
 #include <drivers/arm/ccn.h>
+#include <drivers/arm/css/sds.h>
+#include <lib/utils_def.h>
 #include <plat/arm/common/plat_arm.h>
 #include <plat/common/platform.h>
 #include <drivers/arm/sbsa.h>
@@ -28,6 +30,7 @@
 #if IMAGE_BL1
 const mmap_region_t plat_arm_mmap[] = {
 	ARM_MAP_SHARED_RAM,
+	TC_MAP_NS_DRAM1,
 	TC_FLASH0_RO,
 	TC_MAP_DEVICE,
 	{0}
@@ -48,7 +51,7 @@ const mmap_region_t plat_arm_mmap[] = {
 #if SPM_MM
 	ARM_SP_IMAGE_MMAP,
 #endif
-#if TRUSTED_BOARD_BOOT && !BL2_AT_EL3
+#if TRUSTED_BOARD_BOOT && !RESET_TO_BL2
 	ARM_MAP_BL1_RW,
 #endif
 #ifdef SPD_opteed
@@ -135,7 +138,7 @@ const struct spm_mm_boot_info *plat_get_secure_partition_boot_info(
 }
 #endif /* SPM_MM && defined(IMAGE_BL31) */
 
-#if TRUSTED_BOARD_BOOT
+#if TRUSTED_BOARD_BOOT || MEASURED_BOOT
 int plat_get_mbedtls_heap(void **heap_addr, size_t *heap_size)
 {
 	assert(heap_addr != NULL);
@@ -147,10 +150,27 @@ int plat_get_mbedtls_heap(void **heap_addr, size_t *heap_size)
 
 void plat_arm_secure_wdt_start(void)
 {
-	sbsa_wdog_start(SBSA_SECURE_WDOG_BASE, SBSA_SECURE_WDOG_TIMEOUT);
+	sbsa_wdog_start(SBSA_SECURE_WDOG_CONTROL_BASE, SBSA_SECURE_WDOG_TIMEOUT);
 }
 
 void plat_arm_secure_wdt_stop(void)
 {
-	sbsa_wdog_stop(SBSA_SECURE_WDOG_BASE);
+	sbsa_wdog_stop(SBSA_SECURE_WDOG_CONTROL_BASE);
+}
+
+void plat_arm_secure_wdt_refresh(void)
+{
+	sbsa_wdog_refresh(SBSA_SECURE_WDOG_REFRESH_BASE);
+}
+
+static sds_region_desc_t tc_sds_regions[] = {
+	{ .base = PLAT_ARM_SDS_MEM_BASE },
+	{ .base = PLAT_ARM_RSS_AP_SDS_MEM_BASE },
+};
+
+sds_region_desc_t *plat_sds_get_regions(unsigned int *region_count)
+{
+	*region_count = ARRAY_SIZE(tc_sds_regions);
+
+	return tc_sds_regions;
 }

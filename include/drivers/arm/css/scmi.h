@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2017-2024, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -123,6 +123,8 @@ typedef struct scmi_channel_plat_info {
 	void (*ring_doorbell)(struct scmi_channel_plat_info *plat_info);
 	/* cookie is unused now. But added for future enhancements. */
 	void *cookie;
+	/* Delay in micro-seconds while polling the channel status. */
+	uint32_t delay;
 } scmi_channel_plat_info_t;
 
 
@@ -168,7 +170,7 @@ int scmi_ap_core_set_reset_addr(void *p, uint64_t reset_addr, uint32_t attr);
 int scmi_ap_core_get_reset_addr(void *p, uint64_t *reset_addr, uint32_t *attr);
 
 /* API to get the platform specific SCMI channel information. */
-scmi_channel_plat_info_t *plat_css_get_scmi_info(int channel_id);
+scmi_channel_plat_info_t *plat_css_get_scmi_info(unsigned int channel_id);
 
 /* API to override default PSCI callbacks for platforms that support SCMI. */
 const plat_psci_ops_t *css_scmi_override_pm_ops(plat_psci_ops_t *ops);

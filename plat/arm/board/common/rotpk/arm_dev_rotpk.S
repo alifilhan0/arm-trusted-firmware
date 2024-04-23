@@ -1,20 +1,12 @@
 /*
- * Copyright (c) 2021, ARM Limited. All rights reserved.
+ * Copyright (c) 2021-2024, ARM Limited. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-/* diphda platform provides custom values for the macros defined in
- * arm_def.h , so only platform_def.h needs to be included
- */
-#if !defined(TARGET_PLATFORM_FVP) && !defined(TARGET_PLATFORM_FPGA)
-#include "plat/arm/common/arm_def.h"
-#else
-#include <platform_def.h>
-#endif
+#include <plat/arm/board/common/rotpk/rotpk_def.h>
 
 	.global arm_rotpk_header
-	.global arm_rotpk_header_end
 	.section .rodata.arm_rotpk_hash, "a"
 
 arm_rotpk_header:

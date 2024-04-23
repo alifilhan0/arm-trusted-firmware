@@ -1,25 +1,31 @@
 /*
- * Copyright (c) 2018-2021, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2021, Arm Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include <assert.h>
 #include <errno.h>
-#include <plat_arm.h>
-#include <plat_private.h>
+
 #include <bl31/bl31.h>
 #include <common/bl_common.h>
 #include <common/debug.h>
-#include <drivers/arm/dcc.h>
-#include <drivers/arm/pl011.h>
-#include <drivers/console.h>
 #include <lib/mmio.h>
-#include <lib/xlat_tables/xlat_tables.h>
+#include <lib/xlat_tables/xlat_tables_v2.h>
 #include <plat/common/platform.h>
-#include <versal_def.h>
+#include <plat_arm.h>
+#include <plat_console.h>
+#include <plat_clkfunc.h>
+
+#include <plat_fdt.h>
 #include <plat_private.h>
 #include <plat_startup.h>
+#include "pm_api_sys.h"
+#include "pm_client.h"
+#include <pm_ipi.h>
+#include <versal_def.h>
 
 static entry_point_info_t bl32_image_ep_info;
 static entry_point_info_t bl33_image_ep_info;
@@ -62,36 +68,20 @@ static inline void bl31_set_default_config(void)
 void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 				u_register_t arg2, u_register_t arg3)
 {
-	uint64_t atf_handoff_addr;
+	uint64_t tfa_handoff_addr;
+	uint32_t payload[PAYLOAD_ARG_CNT], max_size = HANDOFF_PARAMS_MAX_SIZE;
+	enum pm_ret_status ret_status;
+	uint64_t addr[HANDOFF_PARAMS_MAX_SIZE];
 
-	if (VERSAL_CONSOLE_IS(pl011) || (VERSAL_CONSOLE_IS(pl011_1))) {
-		static console_t versal_runtime_console;
-		/* Initialize the console to provide early debug support */
-		int rc = console_pl011_register((unsigned long)VERSAL_UART_BASE,
-						(unsigned int)VERSAL_UART_CLOCK,
-						(unsigned int)VERSAL_UART_BAUDRATE,
-						&versal_runtime_console);
-		if (rc == 0) {
-			panic();
-		}
+	set_cnt_freq();
 
-		console_set_scope(&versal_runtime_console, (unsigned int)(CONSOLE_FLAG_BOOT |
-				  CONSOLE_FLAG_RUNTIME));
-	} else if (VERSAL_CONSOLE_IS(dcc)) {
-		/* Initialize the dcc console for debug */
-		int rc = console_dcc_register();
-		if (rc == 0) {
-			panic();
-		}
-	} else {
-		NOTICE("BL31: Did not register for any console.\n");
-	}
+	setup_console();
 
 	/* Initialize the platform config for future decision making */
 	versal_config_setup();
-	/* There are no parameters from BL2 if BL31 is a reset vector */
-	assert(arg0 == 0U);
-	assert(arg1 == 0U);
+
+	/* Get platform related information */
+	board_detection();
 
 	/*
 	 * Do initial security configuration to allow DRAM/device access. On
@@ -106,32 +96,70 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 	SET_PARAM_HEAD(&bl33_image_ep_info, PARAM_EP, VERSION_1, 0);
 	SET_SECURITY_STATE(bl33_image_ep_info.h.attr, NON_SECURE);
 
-	atf_handoff_addr = mmio_read_32(PMC_GLOBAL_GLOB_GEN_STORAGE4);
-	enum fsbl_handoff ret = fsbl_atf_handover(&bl32_image_ep_info,
+	PM_PACK_PAYLOAD4(payload, LOADER_MODULE_ID, 1, PM_LOAD_GET_HANDOFF_PARAMS,
+			(uintptr_t)addr >> 32U, (uintptr_t)addr, max_size);
+	ret_status = pm_ipi_send_sync(primary_proc, payload, NULL, 0);
+	if (ret_status == PM_RET_SUCCESS) {
+		INFO("BL31: GET_HANDOFF_PARAMS call success=%d\n", ret_status);
+		tfa_handoff_addr = (uintptr_t)&addr;
+	} else {
+		ERROR("BL31: GET_HANDOFF_PARAMS Failed, read tfa_handoff_addr from reg\n");
+		tfa_handoff_addr = mmio_read_32(PMC_GLOBAL_GLOB_GEN_STORAGE4);
+	}
+
+	enum xbl_handoff ret = xbl_handover(&bl32_image_ep_info,
 						  &bl33_image_ep_info,
-						  atf_handoff_addr);
-	if (ret == FSBL_HANDOFF_NO_STRUCT || ret == FSBL_HANDOFF_INVAL_STRUCT) {
+						  tfa_handoff_addr);
+	if (ret == XBL_HANDOFF_NO_STRUCT || ret == XBL_HANDOFF_INVAL_STRUCT) {
 		bl31_set_default_config();
-	} else if (ret != FSBL_HANDOFF_SUCCESS) {
+	} else if (ret == XBL_HANDOFF_TOO_MANY_PARTS) {
+		ERROR("BL31: Error too many partitions %u\n", ret);
+	} else if (ret != XBL_HANDOFF_SUCCESS) {
 		panic();
 	} else {
-		ERROR("BL31: Error during fsbl-atf handover %d.\n", ret);
+		INFO("BL31: PLM to TF-A handover success %u\n", ret);
+
+		/*
+		 * The BL32 load address is indicated as 0x0 in the handoff
+		 * parameters, which is different from the default/user-provided
+		 * load address of 0x60000000 but the flags are correctly
+		 * configured. Consequently, in this scenario, set the PC
+		 * to the requested BL32_BASE address.
+		 */
+
+		/* TODO: Remove the following check once this is fixed from PLM */
+		if (bl32_image_ep_info.pc == 0 && bl32_image_ep_info.spsr != 0) {
+			bl32_image_ep_info.pc = (uintptr_t)BL32_BASE;
+		}
 	}
 
 	NOTICE("BL31: Secure code at 0x%lx\n", bl32_image_ep_info.pc);
 	NOTICE("BL31: Non secure code at 0x%lx\n", bl33_image_ep_info.pc);
 }
 
-static interrupt_type_handler_t type_el3_interrupt_handler;
+static versal_intr_info_type_el3_t type_el3_interrupt_table[MAX_INTR_EL3];
 
 int request_intr_type_el3(uint32_t id, interrupt_type_handler_t handler)
 {
-	/* Validate 'handler'*/
-	if (handler == NULL) {
+	static uint32_t index;
+	uint32_t i;
+
+	/* Validate 'handler' and 'id' parameters */
+	if (handler == NULL || index >= MAX_INTR_EL3) {
 		return -EINVAL;
 	}
 
-	type_el3_interrupt_handler = handler;
+	/* Check if a handler has already been registered */
+	for (i = 0; i < index; i++) {
+		if (id == type_el3_interrupt_table[i].id) {
+			return -EALREADY;
+		}
+	}
+
+	type_el3_interrupt_table[index].id = id;
+	type_el3_interrupt_table[index].handler = handler;
+
+	index++;
 
 	return 0;
 }
@@ -140,24 +168,28 @@ static uint64_t rdo_el3_interrupt_handler(uint32_t id, uint32_t flags,
 					  void *handle, void *cookie)
 {
 	uint32_t intr_id;
-	interrupt_type_handler_t handler;
+	uint32_t i;
+	interrupt_type_handler_t handler = NULL;
 
 	intr_id = plat_ic_get_pending_interrupt_id();
-	/* Currently we support one interrupt */
-	if (intr_id != PLAT_VERSAL_IPI_IRQ) {
-		WARN("Unexpected interrupt call: 0x%x\n", intr_id);
-		return 0;
+
+	for (i = 0; i < MAX_INTR_EL3; i++) {
+		if (intr_id == type_el3_interrupt_table[i].id) {
+			handler = type_el3_interrupt_table[i].handler;
+		}
 	}
 
-	handler = type_el3_interrupt_handler;
 	if (handler != NULL) {
 		return handler(intr_id, flags, handle, cookie);
 	}
 
 	return 0;
 }
+
 void bl31_platform_setup(void)
 {
+	prepare_dtb();
+
 	/* Initialize the gic cpu and distributor interfaces */
 	plat_versal_gic_driver_init();
 	plat_versal_gic_init();
@@ -174,6 +206,8 @@ void bl31_plat_runtime_setup(void)
 	if (rc != 0) {
 		panic();
 	}
+
+	console_switch_state(CONSOLE_FLAG_RUNTIME);
 }
 
 /*
@@ -185,6 +219,11 @@ void bl31_plat_arch_setup(void)
 	plat_arm_interconnect_enter_coherency();
 
 	const mmap_region_t bl_regions[] = {
+#if (defined(XILINX_OF_BOARD_DTB_ADDR) && !IS_TFA_IN_OCM(BL31_BASE) && \
+	(!defined(PLAT_XLAT_TABLES_DYNAMIC)))
+		MAP_REGION_FLAT(XILINX_OF_BOARD_DTB_ADDR, XILINX_OF_BOARD_DTB_MAX_SIZE,
+				MT_MEMORY | MT_RW | MT_NS),
+#endif
 		MAP_REGION_FLAT(BL31_BASE, BL31_END - BL31_BASE,
 			MT_MEMORY | MT_RW | MT_SECURE),
 		MAP_REGION_FLAT(BL_CODE_BASE, BL_CODE_END - BL_CODE_BASE,
@@ -197,6 +236,6 @@ void bl31_plat_arch_setup(void)
 		{0}
 	};
 
-	setup_page_tables(bl_regions, plat_versal_get_mmap());
-	enable_mmu_el3(0);
+	setup_page_tables(bl_regions, plat_get_mmap());
+	enable_mmu(0);
 }

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2013-2019, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2023, NVIDIA Corporation. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -57,6 +58,19 @@ int psci_do_cpu_off(unsigned int end_pwrlvl)
 	psci_set_power_off_state(&state_info);
 
 	/*
+	 * Call the platform provided early CPU_OFF handler to allow
+	 * platforms to perform any housekeeping activities before
+	 * actually powering the CPU off. PSCI_E_DENIED indicates that
+	 * the CPU off sequence should be aborted at this time.
+	 */
+	if (psci_plat_pm_ops->pwr_domain_off_early) {
+		rc = psci_plat_pm_ops->pwr_domain_off_early(&state_info);
+		if (rc == PSCI_E_DENIED) {
+			return rc;
+		}
+	}
+
+	/*
 	 * Get the parent nodes here, this is important to do before we
 	 * initiate the power down sequence as after that point the core may
 	 * have exited coherency and its cache may be disabled, any access to
@@ -90,6 +104,9 @@ int psci_do_cpu_off(unsigned int end_pwrlvl)
 	 */
 	psci_do_state_coordination(end_pwrlvl, &state_info);
 
+	/* Update the target state in the power domain nodes */
+	psci_set_target_local_pwr_states(end_pwrlvl, &state_info);
+
 #if ENABLE_PSCI_STAT
 	/* Update the last cpu for each level till end_pwrlvl */
 	psci_stats_update_pwr_down(end_pwrlvl, &state_info);
@@ -109,7 +126,7 @@ int psci_do_cpu_off(unsigned int end_pwrlvl)
 	/*
 	 * Arch. management. Initiate power down sequence.
 	 */
-	psci_do_pwrdown_sequence(psci_find_max_off_lvl(&state_info));
+	psci_pwrdown_cpu(psci_find_max_off_lvl(&state_info));
 
 #if ENABLE_RUNTIME_INSTRUMENTATION
 	PMF_CAPTURE_TIMESTAMP(rt_instr_svc,

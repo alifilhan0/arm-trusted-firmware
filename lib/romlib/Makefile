@@ -1,14 +1,13 @@
 #
-# Copyright (c) 2018-2019, ARM Limited and Contributors. All rights reserved.
+# Copyright (c) 2018-2024, Arm Limited and Contributors. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
 
-AS          = $(CROSS_COMPILE)as
-AR          = $(CROSS_COMPILE)ar
-LD          = $(CROSS_COMPILE)ld
-OC          = $(CROSS_COMPILE)objcopy
-CPP         = $(CROSS_COMPILE)cpp
+toolchains := aarch64
+
+include ../../make_helpers/toolchain.mk
+
 ROMLIB_GEN  = ./romlib_generator.py
 BUILD_DIR   = $(BUILD_PLAT)/romlib
 LIB_DIR     = $(BUILD_PLAT)/lib
@@ -31,9 +30,10 @@ else
   Q :=
 endif
 
-LDFLAGS := --gc-sections -O1
+LDFLAGS := -Wl,--gc-sections -nostdlib
+
 ifeq ($(DEBUG),1)
-   LDFLAGS += -Map=$(MAPFILE)
+   LDFLAGS += -Wl,-Map=$(MAPFILE)
 endif
 
 ifeq (${ARM_ARCH_MINOR},0)
@@ -48,23 +48,23 @@ all: $(BUILD_DIR)/romlib.bin $(LIB_DIR)/libwrappers.a
 
 %.o: %.s
 	@echo "  AS      $@"
-	$(Q)$(AS) $(ASFLAGS) -o $@ $<
+	$(Q)$(aarch64-as) -c $(ASFLAGS) -o $@ $<
 
 $(BUILD_DIR)/%.o: %.s
 	@echo "  AS      $@"
-	$(Q)$(AS) $(ASFLAGS) -o $@ $<
+	$(Q)$(aarch64-as) -c $(ASFLAGS) -o $@ $<
 
 $(BUILD_DIR)/romlib.ld: romlib.ld.S
 	@echo "  PP      $@"
-	$(Q)$(CPP) $(PPFLAGS) -o $@ romlib.ld.S
+	$(Q)$(aarch64-cpp) -E $(PPFLAGS) -o $@ romlib.ld.S
 
 $(BUILD_DIR)/romlib.elf: $(OBJS) $(BUILD_DIR)/romlib.ld
 	@echo "  LD      $@"
-	$(Q)$(LD) -T $(BUILD_DIR)/romlib.ld -L$(LIB_DIR) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
+	$(Q)$(aarch64-ld) -T $(BUILD_DIR)/romlib.ld -L$(LIB_DIR) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
 
 $(BUILD_DIR)/romlib.bin: $(BUILD_DIR)/romlib.elf
 	@echo "  BIN     $@"
-	$(Q)$(OC) -O binary $(BUILD_DIR)/romlib.elf $@
+	$(Q)$(aarch64-oc) -O binary $(BUILD_DIR)/romlib.elf $@
 
 $(WRAPPER_DIR)/jmpvar.s: $(BUILD_DIR)/romlib.elf
 	@echo "  VAR     $@"
@@ -72,7 +72,7 @@ $(WRAPPER_DIR)/jmpvar.s: $(BUILD_DIR)/romlib.elf
 
 $(LIB_DIR)/libwrappers.a: $(WRAPPER_DIR)/jmpvar.o $(WRAPPER_OBJS)
 	@echo "  AR      $@"
-	$(Q)$(AR) -rc $@ $(WRAPPER_DIR)/jmpvar.o $(WRAPPER_OBJS)
+	$(Q)$(aarch64-ar) -rc $@ $(WRAPPER_DIR)/jmpvar.o $(WRAPPER_OBJS)
 
 $(BUILD_DIR)/jmptbl.i: ../../$(PLAT_DIR)/jmptbl.i
 	@echo "  PRE     $@"
